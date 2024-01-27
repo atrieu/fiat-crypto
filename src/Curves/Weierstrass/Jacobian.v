@@ -588,5 +588,171 @@ Module Jacobian.
         eq (double P) (double_minus_3 P).
       Proof. faster_t. Qed.
     End AEqMinus3.
+    Section CoZ.
+      Definition co_z (P Q : point) : Prop :=
+        match proj1_sig P, proj1_sig Q with
+        | (_, _, z1), (_, _, z2) => z1 = z2
+        end.
+
+      Hint Unfold co_z : points_as_coordinates.
+
+      (* https://eprint.iacr.org/2010/309.pdf Algorithm 11 *)
+      Program Definition zaddu (P Q : point) 
+        (H : co_z P Q) : point * point :=
+        match proj1_sig P, proj1_sig Q return (F*F*F)*(F*F*F) with
+        | (x1, y1, z1), (x2, y2, z2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t3 := z1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t1 - t4 in
+          let t3 := t3 * t6 in
+          let t6 := t6 * t6 in
+          let t1 := t1 * t6 in
+          let t6 := t6 * t4 in
+          let t5 := t2 - t5 in
+          let t4 := t5 * t5 in
+          let t4 := t4 - t1 in
+          let t4 := t4 - t6 in
+          let t6 := t1 - t6 in
+          let t2 := t2 * t6 in
+          let t6 := t1 - t4 in
+          let t5 := t5 * t6 in
+          let t5 := t5 - t2 in
+          ((t4, t5, t3), (t1, t2, t3))
+        end.
+      Next Obligation. Proof. faster_t. fsatz. Qed.
+      Next Obligation. Proof. faster_t. Qed.
+
+      (* ZADDU(P, Q) = (P + Q, P) if P <> Q, Q <> -P *)
+      Lemma zaddu_correct (P Q : point) (H : co_z P Q) 
+        (Hneq : match proj1_sig P, proj1_sig Q with 
+                | (x1, y1, _), (x2, y2, _) =>
+                  x1 <> x2 \/ (y1 <> y2 /\ y1 + y2 <> 0)
+                end):
+        let '(R1, R2) := zaddu P Q H in
+        eq (add P Q) R1 /\ eq P R2 /\ co_z R1 R2.
+      Proof. t. Qed.
+
+      (* https://eprint.iacr.org/2010/309.pdf Algorithm 12 *)
+      Program Definition zaddc (P Q : point)
+        (H : co_z P Q) : point * point :=
+      match proj1_sig P, proj1_sig Q return (F*F*F)*(F*F*F) with
+      | (x1, y1, z1), (x2, y2, z2) =>
+        let t1 := x1 in
+        let t2 := y1 in
+        let t3 := z1 in
+        let t4 := x2 in
+        let t5 := y2 in
+        let t6 := t1 - t4 in
+        let t3 := t3 * t6 in
+        let t6 := t6 * t6 in
+        let t7 := t1 * t6 in
+        let t6 := t6 * t4 in
+        let t1 := t2 + t5 in
+        let t4 := t1 * t1 in
+        let t4 := t4 - t7 in
+        let t4 := t4 - t6 in
+        let t1 := t2 - t5 in
+        let t1 := t1 * t1 in
+        let t1 := t1 - t7 in
+        let t1 := t1 - t6 in
+        let t6 := t6 - t7 in
+        let t6 := t6 * t2 in
+        let t2 := t2 - t5 in
+        let t5 := t5 + t5 in
+        let t5 := t2 + t5 in
+        let t7 := t7 - t4 in
+        let t5 := t5 * t7 in
+        let t5 := t5 + t6 in
+        let t7 := t4 + t7 in
+        let t7 := t7 - t1 in
+        let t2 := t2 * t7 in
+        let t2 := t2 + t6 in
+        ((t1, t2, t3), (t4, t5, t3))
+      end.
+      Next Obligation. Proof. faster_t. fsatz. Qed.
+      Next Obligation. Proof. faster_t. fsatz. Qed.
+
+      Hint Unfold opp : points_as_coordinates.
+      (* ZADDC(P, Q) = (P + Q, P - Q) if P <> Q, Q <> -P *)
+      Lemma zaddc_correct (P Q : point) (H : co_z P Q) 
+        (Hneq : match proj1_sig P, proj1_sig Q with 
+                | (x1, y1, _), (x2, y2, _) =>
+                  x1 <> x2 \/ (y1 <> y2 /\ y1 + y2 <> 0)
+                end):
+        let '(R1, R2) := zaddc P Q H in
+        eq (add P Q) R1 /\ eq (add P (opp Q)) R2 /\ co_z R1 R2.
+      Proof. t. Qed.
+
+      (* https://eprint.iacr.org/2010/309.pdf Algorithm 13 *)
+      Program Definition zdau (P Q : point)
+        (H : co_z P Q) : point * point :=
+      match proj1_sig P, proj1_sig Q return (F*F*F)*(F*F*F) with
+      | (x1, y1, z1), (x2, y2, z2) =>
+        let t1 := x1 in
+        let t2 := y1 in
+        let t3 := z1 in
+        let t4 := x2 in
+        let t5 := y2 in
+        let t6 := t1 - t4 in
+        let t7 := t6 * t6 in
+        let t1 := t1 * t7 in
+        let t4 := t4 * t7 in
+        let t5 := t2 - t5 in
+        let t8 := t1 - t4 in
+        let t2 := t2 * t8 in
+        let t2 := t2 + t2 in
+        let t8 := t5 * t5 in
+        let t4 := t8 - t4 in
+        let t4 := t4 - t1 in
+        let t4 := t4 - t1 in
+        let t6 := t4 + t6 in
+        let t6 := t6 * t6 in
+        let t6 := t6 - t7 in
+        let t5 := t5 - t4 in
+        let t5 := t5 * t5 in
+        let t5 := t5 - t8 in
+        let t5 := t5 - t2 in
+        let t7 := t4 * t4 in
+        let t5 := t5 - t7 in
+        let t8 := t7 + t7 in
+        let t8 := t8 + t8 in
+        let t6 := t6 - t7 in
+        let t3 := t3 * t6 in
+        let t6 := t1 * t8 in
+        let t1 := t1 + t4 in
+        let t8 := t8 * t1 in
+        let t7 := t2 + t5 in
+        let t2 := t5 - t2 in
+        let t1 := t8 - t6 in
+        let t5 := t5 * t1 in
+        let t6 := t6 + t8 in
+        let t1 := t2 * t2 in
+        let t1 := t1 - t6 in
+        let t4 := t8 - t1 in
+        let t2 := t2 * t4 in
+        let t2 := t2 - t5 in
+        let t4 := t7 * t7 in
+        let t4 := t4 - t6 in
+        let t8 := t8 - t4 in
+        let t7 := t7 * t8 in
+        let t5 := t7 - t5 in
+        ((t1, t2, t3), (t4, t5, t3))
+      end.
+      Next Obligation. Proof. faster_t. exfalso. fsatz. Qed.
+      Next Obligation. Proof. faster_t. exfalso. fsatz. Qed.
+
+      (* ZDAU(P, Q) = (2P + Q, Q) if P <> Q, Q <> -P *)
+      Lemma zdau_correct (P Q : point) (H : co_z P Q) 
+        (Hneq : match proj1_sig P, proj1_sig Q with 
+                | (x1, y1, _), (x2, y2, _) =>
+                  x1 <> x2 \/ (y1 <> y2 /\ y1 + y2 <> 0)
+                end):
+        let '(R1, R2) := zdau P Q H in
+        eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
+      Proof. (* FIXME *) Admitted.
+    End CoZ.
   End Jacobian.
 End Jacobian.
