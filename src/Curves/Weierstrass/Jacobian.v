@@ -630,10 +630,10 @@ Module Jacobian.
       Proof. faster_t. Qed.
     End AEqMinus3.
     Section CoZ.
-      Context {add_assoc : forall (P Q R : point), eq (add (add P Q) R) (add P (add Q R)) }.
-
       Definition co_z (P Q : point) : Prop :=
         z_of P = z_of Q.
+
+      Definition co_z_points : Type := { '(P, Q) | co_z P Q }.
 
       (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
       (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
@@ -664,10 +664,9 @@ Module Jacobian.
           ((t4, t5, t3), (t1, t2, t3))
         end.
 
-      Hint Unfold co_z zaddu_inner : points_as_coordinates.
+      Hint Unfold co_z co_z_points zaddu_inner : points_as_coordinates.
 
-      Program Definition zaddu (P Q : point)
-        (H : co_z P Q) : point * point :=
+      Program Definition zaddu (P Q : point) (H : co_z P Q) : point * point :=
         zaddu_inner (proj1_sig P) (proj1_sig Q).
       Next Obligation. Proof. faster_t_noclear. Qed.
       Next Obligation. Proof. faster_t. Qed.
@@ -691,6 +690,11 @@ Module Jacobian.
         intros A B. apply A.
         clear -B. t.
       Qed.
+
+      Program Definition zaddu_packed (PQ : co_z_points) : co_z_points :=
+        zaddu (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
+      Next Obligation. Proof. faster_t. Qed.
+      Next Obligation. Proof. faster_t. Qed.
 
       (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
       (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
@@ -759,6 +763,11 @@ Module Jacobian.
         clear -B. t.
       Qed.
 
+      Program Definition zaddc_packed (PQ : co_z_points) : co_z_points :=
+        zaddc (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
+      Next Obligation. Proof. faster_t. Qed.
+      Next Obligation. Proof. faster_t. Qed.
+
       (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
       (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
       (* Algorithm 21 Co-Z doubling with update (register allocation) *)
@@ -822,6 +831,10 @@ Module Jacobian.
         clear -B. t.
       Qed.
 
+      Program Definition dblu_packed (P : point) (HPaff : z_of P = 1) : co_z_points :=
+        dblu P HPaff.
+      Next Obligation. Proof. faster_t. Qed.
+
       (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
       (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
       (* Algorithm 22 Co-Z tripling with update (register allocation) *)
@@ -847,6 +860,10 @@ Module Jacobian.
         - etransitivity; eauto.
       Qed.
 
+      Program Definition tplu_packed (P : point) (HPaff: z_of P = 1) : co_z_points :=
+        tplu P HPaff.
+      Next Obligation. Proof. faster_t. Qed.
+
       (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
       (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
       (* Co-Z doubling-addition with update (naive version) *)
@@ -854,6 +871,8 @@ Module Jacobian.
       Program Definition zdau_naive (P Q : point) (H : co_z P Q) :=
         zaddc (fst (zaddu P Q H)) (snd (zaddu P Q H)) _.
       Next Obligation. Proof. t. Qed.
+
+      Context {add_assoc : forall (P Q R : point), eq (add (add P Q) R) (add P (add Q R)) }.
 
       (* ZDAU(P, Q) = (2P + Q, Q) if P <> Q, Q <> -P *)
       Lemma zdau_naive_correct (P Q : point) (H : co_z P Q)
@@ -968,6 +987,53 @@ Module Jacobian.
         - rewrite <- A2. apply X. eapply Z; eauto. symmetry; assumption.
         - clear -H. t.
       Qed.
+
+      Program Definition zdau_packed (PQ : co_z_points) : co_z_points :=
+        zdau (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
+      Next Obligation. Proof. faster_t. Qed.
+      Next Obligation. Proof. faster_t. Qed.
+
+      Require Import Crypto.Util.Loops.
+
+      (* Program Definition cswap_packed (b : bool) (PQ : co_z_points) : co_z_points := *)
+      (*   if b then (snd (proj1_sig PQ), fst (proj1_sig PQ)) else PQ. *)
+      (* Next Obligation. Proof. faster_t. Qed. *)
+
+      (* Definition cswap (b : bool) (PQ : point * point) : point * point := *)
+      (*   if b then (snd PQ, fst PQ) else PQ. *)
+
+      Context {cswap_packed : bool -> co_z_points -> co_z_points}.
+      Context {cswap : bool -> point * point -> point * point}.
+
+      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+      (* Algorithm 14 Joye’s double-add algorithm with Co-Z addition formulæ *)
+      (* Adapted *)
+      Program Definition joye_ladder (bitsize : nat) (testbit : nat -> bool) (P : Wpoint)
+        (HPnz : P <> inr tt :> W.point) : Wpoint :=
+        (* Initialization *)
+        let P := of_affine P in
+        let b := testbit 1%nat in
+        let R1R0 := cswap_packed b (tplu_packed P _) in
+        (* loop *)
+        let '(R1R0, _) :=
+          (@while (co_z_points*nat) (fun '(R1R0, i) => if (dec (gt i bitsize)) then true else false)
+             (fun '(R1R0, i) =>
+                let b := testbit i in
+                let R1R0 := cswap_packed b R1R0 in
+                let R1R0 := cswap_packed b (zdau_packed R1R0) in
+                let i := S i in
+                (R1R0, i))
+             bitsize (* bound on loop iterations *)
+             (R1R0, 2%nat))
+        in
+        let Q0 := snd (proj1_sig R1R0) in
+        (* Remove P if lsb = 0 *)
+        let b := testbit 0%nat in
+        let Q1 := add Q0 (opp P) in
+        let (P, Q) := cswap b (Q1, Q0) in
+        to_affine P.
+      Next Obligation. Proof. t. Qed.
     End CoZ.
   End Jacobian.
 End Jacobian.
