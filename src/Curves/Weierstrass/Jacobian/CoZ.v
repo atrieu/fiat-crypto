@@ -1,6 +1,8 @@
 Require Import Coq.Classes.Morphisms.
 
 Require Import Crypto.Spec.WeierstrassCurve.
+Require Import Crypto.Curves.Weierstrass.Affine Crypto.Curves.Weierstrass.AffineProofs.
+Require Import Crypto.Curves.Weierstrass.Jacobian.Jacobian.
 Require Import Crypto.Util.Decidable Crypto.Algebra.Field.
 Require Import Crypto.Util.Tactics.BreakMatch.
 Require Import Crypto.Util.Tactics.DestructHead.
@@ -9,9 +11,10 @@ Require Import Crypto.Util.Tactics.SetoidSubst.
 Require Import Crypto.Util.Notations Crypto.Util.LetIn.
 Require Import Crypto.Util.Sum Crypto.Util.Prod Crypto.Util.Sigma.
 Require Import Crypto.Util.FsatzAutoLemmas.
+Require Import Coq.PArith.BinPos.
 
 Module Jacobian.
-  Section Jacobian.
+  Section Co_Z.
     Context {F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv} {a b:F}
             {field:@Algebra.Hierarchy.field F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv}
             {char_ge_3:@Ring.char_ge F Feq Fzero Fone Fopp Fadd Fsub Fmul (BinNat.N.succ_pos (BinNat.N.two))}
@@ -21,36 +24,26 @@ Module Jacobian.
     Local Infix "+" := Fadd. Local Infix "-" := Fsub.
     Local Infix "*" := Fmul. Local Infix "/" := Fdiv.
     Local Notation "x ^ 2" := (x*x). Local Notation "x ^ 3" := (x^2*x).
-    Local Notation "2" := (1+1). Local Notation "8" := (2+2+2+2).
+    Local Notation "2" := (1+1). Local Notation "4" := (2+2).
+    Local Notation "8" := (4+4). Local Notation "27" := (4*4 + 4+4 +1+1+1).
     Local Notation Wpoint := (@W.point F Feq Fadd Fmul a b).
+    Context {char_ge_12:@Ring.char_ge F Feq Fzero Fone Fopp Fadd Fsub Fmul 12%positive}
+            {discriminant_nonzero:id(4*a*a*a + 27*b*b <> 0)}.
 
-    Definition point : Type := { P : F*F*F | let '(X,Y,Z) := P in
-                                             if dec (Z=0) then True else Y^2 = X^3 + a*X*(Z^2)^2 + b*(Z^3)^2 }.
-    Definition eq (P Q : point) : Prop :=
-      match proj1_sig P, proj1_sig Q with
-      | (X1, Y1, Z1), (X2, Y2, Z2) =>
-        if dec (Z1 = 0) then Z2 = 0
-        else Z2 <> 0 /\
-             X1*Z2^2 = X2*Z1^2
-             /\ Y1*Z2^3 = Y2*Z1^3
-      end.
+    Local Notation Wopp := (@W.opp F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
+    Local Notation Wadd := (@W.add F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv field Feq_dec char_ge_3 a b).
+    Local Notation Wzero := (@W.zero F Feq Fadd Fmul a b).
+    Local Notation Weq := (@W.eq F Feq Fadd Fmul a b).
 
-    Definition x_of (P : point) : F :=
-      match proj1_sig P with
-      | (x, y, z) => x
-      end.
+    Local Notation point := (@Jacobian.point F Feq Fzero Fadd Fmul a b Feq_dec).
+    Local Notation eq := (@Jacobian.eq F Feq Fzero Fadd Fmul a b Feq_dec).
+    Local Notation opp := (@Jacobian.opp F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
+    Local Notation add := (@Jacobian.add F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field char_ge_3).
+    Local Notation double := (@Jacobian.double F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
+    Local Notation of_affine := (@Jacobian.of_affine F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
+    Local Notation to_affine := (@Jacobian.to_affine F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
 
-    Definition y_of (P : point) : F :=
-      match proj1_sig P with
-      | (x, y, z) => y
-      end.
-
-    Definition z_of (P : point) : F :=
-      match proj1_sig P with
-      | (x, y, z) => z
-      end.
-
-    (* These cases are not needed to solve the goal, but handling them early speeds things up considerably *)
+   (* Stolen from Jacobian.v *)
     Ltac prept_step_opt :=
       match goal with
       | [ H : ?T |- ?T ] => exact H
@@ -81,92 +74,27 @@ Module Jacobian.
     Ltac prept := repeat prept_step.
     Ltac t := prept; trivial; try contradiction; fsatz.
 
+    Definition x_of (P : point) : F :=
+      match proj1_sig P with
+      | (x, y, z) => x
+      end.
+
+    Definition y_of (P : point) : F :=
+      match proj1_sig P with
+      | (x, y, z) => y
+      end.
+
+    Definition z_of (P : point) : F :=
+      match proj1_sig P with
+      | (x, y, z) => z
+      end.
+
     Create HintDb points_as_coordinates discriminated.
     Hint Unfold Proper respectful Reflexive Symmetric Transitive : points_as_coordinates.
-    Hint Unfold point eq W.eq W.point W.coordinates proj1_sig fst snd : points_as_coordinates.
+    Hint Unfold Jacobian.point Jacobian.eq W.eq W.point W.coordinates proj1_sig fst snd : points_as_coordinates.
+    Hint Unfold x_of y_of z_of : points_as_coordinates.
 
-    Global Instance Equivalence_eq : Equivalence eq.
-    Proof. t. Qed.
-
-    Program Definition of_affine (P:Wpoint) : point :=
-      match W.coordinates P return F*F*F with
-      | inl (x, y) => (x, y, 1)
-      | inr _ => (0, 0, 0)
-      end.
-    Next Obligation. Proof. t. Qed.
-
-    Program Definition to_affine (P:point) : Wpoint :=
-      match proj1_sig P return F*F+_ with
-      | (X, Y, Z) =>
-        if dec (Z = 0) then inr tt
-        else inl (X/Z^2, Y/Z^3)
-      end.
-    Next Obligation. Proof. t. Qed.
-
-    Hint Unfold to_affine of_affine : points_as_coordinates.
-    Global Instance Proper_of_affine : Proper (W.eq ==> eq) of_affine. Proof. t. Qed.
-    Global Instance Proper_to_affine : Proper (eq ==> W.eq) to_affine. Proof. t. Qed.
-    Lemma to_affine_of_affine P : W.eq (to_affine (of_affine P)) P. Proof. t. Qed.
-    Lemma of_affine_to_affine P : eq (of_affine (to_affine P)) P. Proof. t. Qed.
-
-    Program Definition opp (P:point) : point :=
-      match proj1_sig P return F*F*F with
-      | (X, Y, Z) => (X, Fopp Y, Z)
-      end.
-    Next Obligation. Proof. t. Qed.
-
-    (** See http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-dbl-2007-bl *)
-    Program Definition double (P : point) : point :=
-      match proj1_sig P return F*F*F with
-      | (x_in, y_in, z_in) =>
-        let xx := x_in^2 in
-        let yy := y_in^2 in
-        let yyyy := yy^2 in
-        let zz := z_in^2 in
-        (** [s = 2*((x_in + yy)^2 - xx - yyyy)] *)
-        let s := x_in + yy in
-        let s := s^2 in
-        let s := s - xx in
-        let s := s - yyyy in
-        let s := s + s in
-        (** [m = 3*xx + a*zz^2] *)
-        let m := zz^2 in
-        let m := a * m in
-        let m := m + xx in
-        let m := m + xx in
-        let m := m + xx in
-        (** [x_out = m^2 - 2*s] *)
-        let x_out := m^2 in
-        let x_out := x_out - s in
-        let x_out := x_out - s in
-        (** [z_out = (y_in + z_in)^2 - yy - zz] *)
-        let z_out := y_in + z_in in
-        let z_out := z_out^2 in
-        let z_out := z_out - yy in
-        let z_out := z_out - zz in
-        (** [y_out = m*(s-x_out) - 8*yyyy] *)
-        let yyyy := yyyy + yyyy in
-        let yyyy := yyyy + yyyy in
-        let yyyy := yyyy + yyyy in
-        let y_out := s - x_out in
-        let y_out := y_out * m in
-        let y_out := y_out - yyyy in
-        (x_out, y_out, z_out)
-      end.
-    Next Obligation. Proof. t. Qed.
-
-    Definition z_is_zero_or_one (Q : point) : Prop :=
-      match proj1_sig Q with
-      | (_, _, z) => z = 0 \/ z = 1
-      end.
-
-    Definition add_precondition (Q : point) (mixed : bool) : Prop :=
-      match mixed with
-      | false => True
-      | true => z_is_zero_or_one Q
-      end.
-
-    Local Ltac clear_neq :=
+        Local Ltac clear_neq :=
       repeat match goal with
              | [ H : _ <> _ |- _ ] => clear H
              end.
@@ -458,13 +386,11 @@ Module Jacobian.
       let pkg := F.get_package_on fld in
       divisions_to_inverses fld;
       repeat speed_up_fsatz_step_on pkg.
-    (* sanity check to get error messages that would otherwise be gobbled by [repeat] *)
     Local Ltac speed_up_fsatz_check :=
       let fld := guess_field in
       let pkg := F.get_package_on fld in
       speed_up_fsatz_step_on pkg.
 
-    (* Everything this can solve, [t] can also solve, but this does some extra work to go faster *)
     Local Ltac pre_pre_faster_t :=
       prept; try contradiction; speed_up_fsatz.
     Local Ltac pre_faster_t :=
@@ -479,94 +405,15 @@ Module Jacobian.
                   end;
                   fsatz ].
 
-    Hint Unfold double negb andb add_precondition z_is_zero_or_one : points_as_coordinates.
-    Program Definition add_impl (mixed : bool) (P Q : point)
-            (H : add_precondition Q mixed) : point :=
-      match proj1_sig P, proj1_sig Q return F*F*F with
-      | (x1, y1, z1), (x2, y2, z2) =>
-        let z1nz := if dec (z1 = 0) then false else true in
-        let z2nz := if dec (z2 = 0) then false else true in
-        let z1z1 := z1^2 in
-        let '(u1, s1, two_z1z2) := if negb mixed
-                                   then
-                                     let z2z2 := z2^2 in
-                                     let u1 := x1 * z2z2 in
-                                     let two_z1z2 := z1 + z2 in
-                                     let two_z1z2 := two_z1z2^2 in
-                                     let two_z1z2 := two_z1z2 - z1z1 in
-                                     let two_z1z2 := two_z1z2 - z2z2 in
-                                     let s1 := z2 * z2z2 in
-                                     let s1 := s1 * y1 in
-                                     (u1, s1, two_z1z2)
-                                   else
-                                     let u1 := x1 in
-                                     let two_z1z2 := z1 + z1 in
-                                     let s1 := y1 in
-                                     (u1, s1, two_z1z2)
-        in
-        let u2 := x2 * z1z1 in
-        let h := u2 - u1 in
-        let xneq := if dec (h = 0) then false else true in
-        let z_out := h * two_z1z2 in
-        let z1z1z1 := z1 * z1z1 in
-        let s2 := y2 * z1z1z1 in
-        let r := s2 - s1 in
-        let r := r + r in
-        let yneq := if dec (r = 0) then false else true in
-        if (negb xneq && negb yneq && z1nz && z2nz)%bool
-        then proj1_sig (double P)
-        else
-          let i := h + h in
-          let i := i^2 in
-          let j := h * i in
-          let v := u1 * i in
-          let x_out := r^2 in
-          let x_out := x_out - j in
-          let x_out := x_out - v in
-          let x_out := x_out - v in
-          let y_out := v - x_out in
-          let y_out := y_out * r in
-          let s1j := s1 * j in
-          let y_out := y_out - s1j in
-          let y_out := y_out - s1j in
-          let x_out := if z1nz then x_out else x2 in
-          let x3 := if z2nz then x_out else x1 in
-          let y_out := if z1nz then y_out else y2 in
-          let y3 := if z2nz then y_out else y1 in
-          let z_out := if z1nz then z_out else z2 in
-          let z3 := if z2nz then z_out else z1 in
-          (x3, y3, z3)
-      end.
-    Next Obligation. Proof. faster_t_noclear. Qed.
+    Hint Unfold Jacobian.double negb andb : points_as_coordinates.
+    Hint Unfold W.eq W.add Jacobian.to_affine Jacobian.of_affine Jacobian.add Jacobian.add_impl Jacobian.opp : points_as_coordinates.
 
-    Definition add (P Q : point) : point :=
-      add_impl false P Q I.
-    Definition add_mixed (P : point) (Q : point) (H : z_is_zero_or_one Q) :=
-      add_impl true P Q H.
-
-    Hint Unfold W.eq W.add to_affine add add_mixed add_impl opp : points_as_coordinates.
-
+    (* These could go into Jacobian.v *)
     Global Instance Proper_opp : Proper (eq ==> eq) opp. Proof. faster_t_noclear. Qed.
 
-    Global Instance Proper_double : Proper (eq ==> eq) double. Proof. faster_t_noclear. Qed.
-    Lemma to_affine_double P :
-      W.eq (to_affine (double P)) (W.add (to_affine P) (to_affine P)).
-    Proof. faster_t_noclear. Qed.
-
-    Lemma add_mixed_eq_add (P : point) (Q : point) (H : z_is_zero_or_one Q) :
-      eq (add P Q) (add_mixed P Q H).
-    Proof. faster_t. Qed.
-
-    Global Instance Proper_add : Proper (eq ==> eq ==> eq) add. Proof. faster_t_noclear. Qed.
-    Import BinPos.
-    Lemma to_affine_add P Q
-      : W.eq (to_affine (add P Q)) (W.add (to_affine P) (to_affine Q)).
-    Proof.
-      Time prept; try contradiction; speed_up_fsatz; clean_up_speed_up_fsatz. (* 15.009 secs (14.871u,0.048s) *)
-      Time all: fsatz. (* 6.335 secs (6.172u,0.163s) *)
-      Time Qed. (* 1.924 secs (1.928u,0.s) *)
-
-    Hint Unfold x_of y_of z_of : points_as_coordinates.
+    Lemma of_affine_add P Q
+      : eq (of_affine (W.add P Q)) (add (of_affine P) (of_affine Q)).
+    Proof. t. Qed.
 
     Lemma add_opp (P : point) :
       z_of (add P (opp P)) = 0.
@@ -589,59 +436,69 @@ Module Jacobian.
       eq (add P Q) (double P).
     Proof. faster_t_noclear. Qed.
 
-    (** If [a] is -3, one can substitute a faster implementation of [double]. *)
-    Section AEqMinus3.
-      Context (a_eq_minus3 : a = Fopp (1+1+1)).
+    (* This uses assumptions not present in Jacobian.v,
+       namely char_ge_12 and discriminant_nonzero. *)
+    Lemma add_assoc (P Q R : point) :
+      eq (add (add P Q) R) (add P (add Q R)).
+    Proof.
+      rewrite <- (Jacobian.of_affine_to_affine (add (add _ _) _)).
+      rewrite <- (Jacobian.of_affine_to_affine (add _ (add _ _))).
+      rewrite (Jacobian.to_affine_add _ R).
+      rewrite (Jacobian.to_affine_add P (add Q R)).
+      do 2 rewrite of_affine_add.
+      rewrite (Jacobian.to_affine_add P Q).
+      rewrite (Jacobian.to_affine_add Q R).
+      do 2 rewrite <- of_affine_add.
+      destruct (@W.commutative_group F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec char_ge_3 char_ge_12 ltac:(cbv [id] in *; fsatz)).
+      destruct commutative_group_group. destruct group_monoid.
+      destruct monoid_is_associative.
+      rewrite associative.
+      reflexivity.
+    Qed.
 
-      Program Definition double_minus_3 (P : point) : point :=
-        match proj1_sig P return F*F*F with
-        | (x_in, y_in, z_in) =>
-          let delta := z_in^2 in
-          let gamma := y_in^2 in
-          let beta := x_in * gamma in
-          let ftmp := x_in - delta in
-          let ftmp2 := x_in + delta in
-          let tmptmp := ftmp2 + ftmp2 in
-          let ftmp2 := ftmp2 + tmptmp in
-          let alpha := ftmp * ftmp2 in
-          let x_out := alpha^2 in
-          let fourbeta := beta + beta in
-          let fourbeta := fourbeta + fourbeta in
-          let tmptmp := fourbeta + fourbeta in
-          let x_out := x_out - tmptmp in
-          let delta := gamma + delta in
-          let ftmp := y_in + z_in in
-          let z_out := ftmp^2 in
-          let z_out := z_out - delta in
-          let y_out := fourbeta - x_out in
-          let gamma := gamma + gamma in
-          let gamma := gamma^2 in
-          let y_out := alpha * y_out in
-          let gamma := gamma + gamma in
-          let y_out := y_out - gamma in
-          (x_out, y_out, z_out)
-        end.
-      Next Obligation. Proof. t. Qed.
+    Definition is_point (P : F*F*F) : Prop :=
+      let '(X,Y,Z) := P in
+      if dec (Z=0) then True else Y^2 = X^3 + a*X*(Z^2)^2 + b*(Z^3)^2.
 
-      Hint Unfold double_minus_3 : points_as_coordinates.
+    Definition co_z (P Q : point) : Prop :=
+      z_of P = z_of Q.
 
-      Lemma double_minus_3_eq_double (P : point) :
-        eq (double P) (double_minus_3 P).
-      Proof. faster_t. Qed.
-    End AEqMinus3.
-    Section CoZ.
-      Definition co_z (P Q : point) : Prop :=
-        z_of P = z_of Q.
+    Definition make_co_z_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
+      match P, Q with
+      | (x1, y1, z1), (x2, y2, z2) =>
+          let t1 := x2 in
+          let t2 := y2 in
+          let t3 := z1 in
+          let t4 := t3^2 in
+          let t1 := t4 * t1 in
+          let t2 := t4 * t2 in
+          let t2 := t3 * t2 in
+          (P, (t1, t2, t3))
+      end.
 
-      Definition co_z_points : Type := { '(P, Q) | co_z P Q }.
+    Hint Unfold is_point co_z make_co_z_inner : points_as_coordinates.
 
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 19 Co-Z addition with update (register allocation) *)
-      (* 6 field registers, 5M, 2S *)
-      Definition zaddu_inner (P Q : F*F*F) : (F*F*F)*(F*F*F) :=
-        match P, Q with
-        | (x1, y1, z1), (x2, y2, z2) =>
+    Program Definition make_co_z (P Q : point) (HQaff : z_of Q = 1) : (point * point) :=
+      make_co_z_inner (proj1_sig P) (proj1_sig Q).
+    Next Obligation. Proof. faster_t. Qed.
+    Next Obligation. Proof. faster_t. Qed.
+
+    Hint Unfold make_co_z : points_as_coordinates.
+
+    Lemma make_co_z_correct (P Q : point) (HQaff : z_of Q = 1)
+      (HPnz : z_of P <> 0) :
+      eq P (fst (make_co_z P Q HQaff))
+      /\ eq Q (snd (make_co_z P Q HQaff))
+      /\ co_z (fst (make_co_z P Q HQaff)) (snd (make_co_z P Q HQaff)).
+    Proof. faster_t. Qed.
+
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 19 Co-Z addition with update (register allocation) *)
+    (* 6 field registers, 5M, 2S *)
+    Definition zaddu_inner (P Q : F*F*F) : (F*F*F)*(F*F*F) :=
+      match P, Q with
+      | (x1, y1, z1), (x2, y2, z2) =>
           let t1 := x1 in
           let t2 := y1 in
           let t3 := z1 in
@@ -662,119 +519,109 @@ Module Jacobian.
           let t5 := t5 * t6 in
           let t5 := t5 - t2 in
           ((t4, t5, t3), (t1, t2, t3))
-        end.
-
-      Hint Unfold co_z co_z_points zaddu_inner : points_as_coordinates.
-
-      Program Definition zaddu (P Q : point) (H : co_z P Q) : point * point :=
-        zaddu_inner (proj1_sig P) (proj1_sig Q).
-      Next Obligation. Proof. faster_t_noclear. Qed.
-      Next Obligation. Proof. faster_t. Qed.
-
-      Hint Unfold zaddu : points_as_coordinates.
-
-      (* ZADDU(P, Q) = (P + Q, P) if P <> Q, Q <> -P *)
-      Lemma zaddu_correct (P Q : point) (H : co_z P Q)
-        (Hneq : x_of P <> x_of Q):
-        let '(R1, R2) := zaddu P Q H in
-        eq (add P Q) R1 /\ eq P R2 /\ co_z R1 R2.
-      Proof. faster_t_noclear. Qed.
-
-      Lemma zaddu_correct_alt (P Q : point) (H : co_z P Q) :
-        let '(R1, R2) := zaddu P Q H in
-        z_of R1 <> 0 ->
-        eq (add P Q) R1 /\ eq P R2 /\ co_z R1 R2.
-      Proof.
-        generalize (zaddu_correct P Q H).
-        rewrite (surjective_pairing (zaddu _ _ _)).
-        intros A B. apply A.
-        clear -B. t.
-      Qed.
-
-      Program Definition zaddu_packed (PQ : co_z_points) : co_z_points :=
-        zaddu (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
-      Next Obligation. Proof. faster_t. Qed.
-      Next Obligation. Proof. faster_t. Qed.
-
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 20 Conjugate co-Z addition (register allocation) *)
-      (* 7 field registers, 6M, 3S*)
-      Definition zaddc_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
-      match P, Q with
-      | (x1, y1, z1), (x2, y2, z2) =>
-        let t1 := x1 in
-        let t2 := y1 in
-        let t3 := z1 in
-        let t4 := x2 in
-        let t5 := y2 in
-        let t6 := t1 - t4 in
-        let t3 := t3 * t6 in
-        let t6 := t6^2 in
-        let t7 := t1 * t6 in
-        let t6 := t6 * t4 in
-        let t1 := t2 + t5 in
-        let t4 := t1^2 in
-        let t4 := t4 - t7 in
-        let t4 := t4 - t6 in
-        let t1 := t2 - t5 in
-        let t1 := t1^2 in
-        let t1 := t1 - t7 in
-        let t1 := t1 - t6 in
-        let t6 := t6 - t7 in
-        let t6 := t6 * t2 in
-        let t2 := t2 - t5 in
-        let t5 := t5 + t5 in
-        let t5 := t2 + t5 in
-        let t7 := t7 - t4 in
-        let t5 := t5 * t7 in
-        let t5 := t5 + t6 in
-        let t7 := t4 + t7 in
-        let t7 := t7 - t1 in
-        let t2 := t2 * t7 in
-        let t2 := t2 + t6 in
-        ((t1, t2, t3), (t4, t5, t3))
       end.
 
-      Hint Unfold zaddc_inner : points_as_coordinates.
+    Hint Unfold zaddu_inner : points_as_coordinates.
 
-      Program Definition zaddc (P Q : point)
-        (H : co_z P Q) : point * point :=
-        zaddc_inner (proj1_sig P) (proj1_sig Q).
-      Next Obligation. Proof. faster_t_noclear. Qed.
-      Next Obligation. Proof. faster_t_noclear. Qed.
+    Program Definition zaddu (P Q : point) (H : co_z P Q) : point * point :=
+      zaddu_inner (proj1_sig P) (proj1_sig Q).
+    Next Obligation. Proof. faster_t_noclear. Qed.
+    Next Obligation. Proof. faster_t. Qed.
 
-      Hint Unfold zaddc : points_as_coordinates.
-      (* ZADDC(P, Q) = (P + Q, P - Q) if P <> Q, Q <> -P *)
-      Lemma zaddc_correct (P Q : point) (H : co_z P Q)
-        (Hneq : x_of P <> x_of Q):
-        let '(R1, R2) := zaddc P Q H in
-        eq (add P Q) R1 /\ eq (add P (opp Q)) R2 /\ co_z R1 R2.
-      Proof. faster_t_noclear. Qed.
+    Hint Unfold zaddu : points_as_coordinates.
 
-      Lemma zaddc_correct_alt (P Q : point) (H : co_z P Q) :
-        let '(R1, R2) := zaddc P Q H in
-        z_of R1 <> 0 ->
-        eq (add P Q) R1 /\ eq (add P (opp Q)) R2 /\ co_z R1 R2.
-      Proof.
-        generalize (zaddc_correct P Q H).
-        rewrite (surjective_pairing (zaddc _ _ _)).
-        intros A B. apply A.
-        clear -B. t.
-      Qed.
+    (* ZADDU(P, Q) = (P + Q, P) if P <> Q, Q <> -P *)
+    Lemma zaddu_correct (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q):
+      let '(R1, R2) := zaddu P Q H in
+      eq (add P Q) R1 /\ eq P R2 /\ co_z R1 R2.
+    Proof. faster_t_noclear. Qed.
 
-      Program Definition zaddc_packed (PQ : co_z_points) : co_z_points :=
-        zaddc (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
-      Next Obligation. Proof. faster_t. Qed.
-      Next Obligation. Proof. faster_t. Qed.
+    Lemma zaddu_correct_alt (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddu P Q H in
+      z_of R1 <> 0 ->
+      eq (add P Q) R1 /\ eq P R2 /\ co_z R1 R2.
+    Proof.
+      generalize (zaddu_correct P Q H).
+      rewrite (surjective_pairing (zaddu _ _ _)).
+      intros A B. apply A.
+      clear -B. t.
+    Qed.
 
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 21 Co-Z doubling with update (register allocation) *)
-      (* 6 field registers, 1M, 5S *)
-      Definition dblu_inner (P : F*F*F) : (F*F*F) * (F*F*F) :=
-        match P with
-        | (x1, y1, _) =>
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 20 Conjugate co-Z addition (register allocation) *)
+    (* 7 field registers, 6M, 3S*)
+    Definition zaddc_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
+      match P, Q with
+      | (x1, y1, z1), (x2, y2, z2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t3 := z1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t1 - t4 in
+          let t3 := t3 * t6 in
+          let t6 := t6^2 in
+          let t7 := t1 * t6 in
+          let t6 := t6 * t4 in
+          let t1 := t2 + t5 in
+          let t4 := t1^2 in
+          let t4 := t4 - t7 in
+          let t4 := t4 - t6 in
+          let t1 := t2 - t5 in
+          let t1 := t1^2 in
+          let t1 := t1 - t7 in
+          let t1 := t1 - t6 in
+          let t6 := t6 - t7 in
+          let t6 := t6 * t2 in
+          let t2 := t2 - t5 in
+          let t5 := t5 + t5 in
+          let t5 := t2 + t5 in
+          let t7 := t7 - t4 in
+          let t5 := t5 * t7 in
+          let t5 := t5 + t6 in
+          let t7 := t4 + t7 in
+          let t7 := t7 - t1 in
+          let t2 := t2 * t7 in
+          let t2 := t2 + t6 in
+          ((t1, t2, t3), (t4, t5, t3))
+      end.
+
+    Hint Unfold zaddc_inner : points_as_coordinates.
+
+    Program Definition zaddc (P Q : point)
+      (H : co_z P Q) : point * point :=
+      zaddc_inner (proj1_sig P) (proj1_sig Q).
+    Next Obligation. Proof. faster_t_noclear. Qed.
+    Next Obligation. Proof. faster_t_noclear. Qed.
+
+    Hint Unfold zaddc : points_as_coordinates.
+    (* ZADDC(P, Q) = (P + Q, P - Q) if P <> Q, Q <> -P *)
+    Lemma zaddc_correct (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q):
+      let '(R1, R2) := zaddc P Q H in
+      eq (add P Q) R1 /\ eq (add P (opp Q)) R2 /\ co_z R1 R2.
+    Proof. faster_t_noclear. Qed.
+
+    Lemma zaddc_correct_alt (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddc P Q H in
+      z_of R1 <> 0 ->
+      eq (add P Q) R1 /\ eq (add P (opp Q)) R2 /\ co_z R1 R2.
+    Proof.
+      generalize (zaddc_correct P Q H).
+      rewrite (surjective_pairing (zaddc _ _ _)).
+      intros A B. apply A.
+      clear -B. t.
+    Qed.
+
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 21 Co-Z doubling with update (register allocation) *)
+    (* 6 field registers, 1M, 5S *)
+    Definition dblu_inner (P : F*F*F) : (F*F*F) * (F*F*F) :=
+      match P with
+      | (x1, y1, _) =>
           let t0 :=  a in
           let t1 := x1 in
           let t2 := y1 in
@@ -793,247 +640,207 @@ Module Jacobian.
           let t4 := t0^2 in
           let t5 := t1 + t1 in
           let t4 := t4 - t5 in
-          (* let t2 := t2 + t2 in *)
-          (* let t2 := t2 + t2 in *)
-          (* let t2 := t2 + t2 in (* t2 <- 8t2 *) *)
           let t2 := 8 * t2 in
           let t5 := t1 - t4 in
           let t5 := t5 * t0 in
           let t5 := t5 - t2 in
           ((t4, t5, t3), (t1, t2, t3))
-        end.
+      end.
 
-      Hint Unfold dblu_inner : points_as_coordinates.
+    Hint Unfold dblu_inner : points_as_coordinates.
 
-      Program Definition dblu (P : point)
-        (H: z_of P = 1) : point * point :=
-        dblu_inner (proj1_sig P).
-      Next Obligation. Proof. faster_t. Qed.
-      Next Obligation. Proof. faster_t. Qed.
+    Program Definition dblu (P : point)
+      (H: z_of P = 1) : point * point :=
+      dblu_inner (proj1_sig P).
+    Next Obligation. Proof. faster_t. Qed.
+    Next Obligation. Proof. faster_t. Qed.
 
-      Hint Unfold dblu : points_as_coordinates.
+    Hint Unfold dblu : points_as_coordinates.
 
-      (* DBLU(P) = (2P, P) when Z(P) = 1 *)
-      Lemma dblu_correct (P : point) (H : z_of P = 1)
-        (Hynz : y_of P <> 0) :
-        let '(R1, R2) := dblu P H in
-        eq (double P) R1 /\ eq P R2 /\ co_z R1 R2.
-      Proof. faster_t. Qed.
+    (* DBLU(P) = (2P, P) when Z(P) = 1 *)
+    Lemma dblu_correct (P : point) (H : z_of P = 1)
+      (Hynz : y_of P <> 0) :
+      let '(R1, R2) := dblu P H in
+      eq (double P) R1 /\ eq P R2 /\ co_z R1 R2.
+    Proof. faster_t. Qed.
 
-      Lemma dblu_correct_alt (P : point) (H : z_of P = 1) :
-        let '(R1, R2) := dblu P H in
-        z_of R1 <> 0 ->
-        eq (double P) R1 /\ eq P R2 /\ co_z R1 R2.
-      Proof.
-        generalize (dblu_correct P H).
-        rewrite (surjective_pairing (dblu _ _)).
-        intros A B. apply A.
-        clear -B. t.
-      Qed.
+    Lemma dblu_correct_alt (P : point) (H : z_of P = 1) :
+      let '(R1, R2) := dblu P H in
+      z_of R1 <> 0 ->
+      eq (double P) R1 /\ eq P R2 /\ co_z R1 R2.
+    Proof.
+      generalize (dblu_correct P H).
+      rewrite (surjective_pairing (dblu _ _)).
+      intros A B. apply A.
+      clear -B. t.
+    Qed.
 
-      Program Definition dblu_packed (P : point) (HPaff : z_of P = 1) : co_z_points :=
-        dblu P HPaff.
-      Next Obligation. Proof. faster_t. Qed.
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 22 Co-Z tripling with update (register allocation) *)
+    (* 6M, 7S *)
+    Definition tplu_inner (P : F*F*F) : (F*F*F)*(F*F*F) :=
+      zaddu_inner (snd (dblu_inner P)) (fst (dblu_inner P)).
 
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 22 Co-Z tripling with update (register allocation) *)
-      (* 6M, 7S *)
-      Program Definition tplu (P : point) (H : z_of P = 1) : point * point :=
-        zaddu (snd (dblu P H)) (fst (dblu P H)) _.
-      Next Obligation. faster_t. Qed.
+    Hint Unfold tplu_inner : points_as_coordinates.
 
-      Hint Unfold tplu : points_as_coordinates.
-      Lemma tplu_correct (P : point) (H : z_of P = 1) (Hynz : y_of P <> 0) :
-        let '(R1, R2) := tplu P H in
-        z_of R1 <> 0 ->
-        eq (add (double P) P) R1 /\ eq P R2 /\ co_z R1 R2.
-      Proof.
-        unfold tplu. generalize (zaddu_correct_alt (snd (dblu P H)) (fst (dblu P H)) (tplu_obligation_1 P H)).
-        destruct (zaddu (snd (dblu P H)) (fst (dblu P H)) (tplu_obligation_1 P H)) as [R1 R2] eqn:Hzaddu.
-        intros A B. specialize (A B). destruct A as [A1 [A2 A3] ].
-        generalize (dblu_correct P H Hynz).
-        rewrite (surjective_pairing (dblu P H)). intros [B1 [B2 B3] ].
-        repeat split; [| | assumption].
-        - rewrite B1. rewrite <- A1.
-          rewrite B2 at 2. apply add_comm.
-        - etransitivity; eauto.
-      Qed.
+    Program Definition tplu (P : point) (H : z_of P = 1) : point * point :=
+      tplu_inner (proj1_sig P).
+    Next Obligation. Proof. faster_t. Qed.
+    Next Obligation. Proof. faster_t. Qed.
 
-      Program Definition tplu_packed (P : point) (HPaff: z_of P = 1) : co_z_points :=
-        tplu P HPaff.
-      Next Obligation. Proof. faster_t. Qed.
+    Program Definition tplu2 (P : point) (H : z_of P = 1) : point * point :=
+      zaddu (snd (dblu P H)) (fst (dblu P H)) _.
+    Next Obligation. faster_t. Qed.
 
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Co-Z doubling-addition with update (naive version) *)
-      (* 11M, 5S *)
-      Program Definition zdau_naive (P Q : point) (H : co_z P Q) :=
-        zaddc (fst (zaddu P Q H)) (snd (zaddu P Q H)) _.
-      Next Obligation. Proof. t. Qed.
+    Hint Unfold tplu tplu2 : points_as_coordinates.
 
-      Context {add_assoc : forall (P Q R : point), eq (add (add P Q) R) (add P (add Q R)) }.
+    Lemma tplu_tplu2 (P : point) (H : z_of P = 1) :
+      eq (fst (tplu P H)) (fst (tplu2 P H)) /\ eq (snd (tplu P H)) (snd (tplu2 P H)).
+    Proof. faster_t. Qed.
 
-      (* ZDAU(P, Q) = (2P + Q, Q) if P <> Q, Q <> -P *)
-      Lemma zdau_naive_correct (P Q : point) (H : co_z P Q)
-        (Hneq : x_of P <> x_of Q):
-        let '(R1, R2) := zdau_naive P Q H in
-        z_of R1 <> 0 ->
-        eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
-      Proof.
-        destruct (zdau_naive P Q H) as [R1 R2] eqn:HR.
-        intros HR1. unfold zdau_naive in HR.
-        generalize (zaddc_correct_alt (fst (zaddu P Q H)) (snd (zaddu P Q H)) (zdau_naive_obligation_1 P Q H)). rewrite HR.
-        intros A. specialize (A HR1).
-        destruct A as (A1 & A2 & A3).
-        generalize (zaddu_correct P Q H Hneq).
-        rewrite (surjective_pairing (zaddu P Q H)).
-        intros (B1 & B2 & B3).
-        repeat split; auto.
-        - rewrite <- add_double, <- A1, <- B1, <- B2; [|reflexivity].
-          rewrite add_assoc, add_comm. reflexivity.
-        - rewrite <- A2, <- B1, <- B2.
-          rewrite (add_comm P Q).
-          rewrite add_assoc. rewrite add_zero_r; [reflexivity|apply add_opp].
-      Qed.
+    Lemma tplu_correct (P : point) (H : z_of P = 1) (Hynz : y_of P <> 0) :
+      let '(R1, R2) := tplu P H in
+      z_of R1 <> 0 ->
+      eq (add (double P) P) R1 /\ eq P R2 /\ co_z R1 R2.
+    Proof.
+      rewrite (surjective_pairing (tplu P H)).
+      rewrite (proj1 (tplu_tplu2 P H)) at 2.
+      rewrite (proj2 (tplu_tplu2 P H)) at 1.
+      unfold co_z.
+      replace (z_of (fst (tplu P H))) with (z_of (fst (tplu2 P H))) by faster_t.
+      replace (z_of (snd (tplu P H))) with (z_of (snd (tplu2 P H))) by faster_t.
+      unfold tplu2. generalize (zaddu_correct_alt (snd (dblu P H)) (fst (dblu P H)) (tplu2_obligation_1 P H)).
+      destruct (zaddu (snd (dblu P H)) (fst (dblu P H)) (tplu2_obligation_1 P H)) as [R1 R2] eqn:Hzaddu.
+      intros A B. specialize (A B). destruct A as [A1 [A2 A3] ].
+      generalize (dblu_correct P H Hynz).
+      rewrite (surjective_pairing (dblu P H)). intros [B1 [B2 B3] ].
+      simpl; repeat split; [| |assumption].
+      - rewrite B1. rewrite <- A1.
+        rewrite B2 at 2. apply add_comm.
+      - etransitivity; eauto.
+    Qed.
 
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 23 Co-Z doubling-addition with update (register allocation) *)
-      (* 8 field registers, 9M, 7S (instead of 11M, 5S) *)
-      Definition zdau_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
-        match P, Q return (F*F*F)*(F*F*F) with
-        | (x1, y1, z1), (x2, y2, z2) =>
-            let t1 := x1 in
-            let t2 := y1 in
-            let t3 := z1 in
-            let t4 := x2 in
-            let t5 := y2 in
-            let t6 := t1 - t4 in
-            let t7 := t6^2 in
-            let t1 := t1 * t7 in
-            let t4 := t4 * t7 in
-            let t5 := t2 - t5 in
-            let t8 := t1 - t4 in
-            let t2 := t2 * t8 in
-            let t2 := t2 + t2 in
-            let t8 := t5^2 in
-            let t4 := t8 - t4 in
-            let t4 := t4 - t1 in
-            let t4 := t4 - t1 in
-            let t6 := t4 + t6 in
-            let t6 := t6^2 in
-            let t6 := t6 - t7 in
-            let t5 := t5 - t4 in
-            let t5 := t5^2 in
-            let t5 := t5 - t8 in
-            let t5 := t5 - t2 in
-            let t7 := t4^2 in
-            let t5 := t5 - t7 in
-            let t8 := t7 + t7 in
-            let t8 := t8 + t8 in
-            let t6 := t6 - t7 in
-            let t3 := t3 * t6 in
-            let t6 := t1 * t8 in
-            let t1 := t1 + t4 in
-            let t8 := t8 * t1 in
-            let t7 := t2 + t5 in
-            let t2 := t5 - t2 in
-            let t1 := t8 - t6 in
-            let t5 := t5 * t1 in
-            let t6 := t6 + t8 in
-            let t1 := t2^2 in
-            let t1 := t1 - t6 in
-            let t4 := t8 - t1 in
-            let t2 := t2 * t4 in
-            let t2 := t2 - t5 in
-            let t4 := t7^2 in
-            let t4 := t4 - t6 in
-            let t8 := t8 - t4 in
-            let t7 := t7 * t8 in
-            let t5 := t7 - t5 in
-            ((t1, t2, t3), (t4, t5, t3))
-        end.
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Co-Z doubling-addition with update (naive version) *)
+    (* 11M, 5S *)
+    Program Definition zdau_naive (P Q : point) (H : co_z P Q) :=
+      zaddc (fst (zaddu P Q H)) (snd (zaddu P Q H)) _.
+    Next Obligation. Proof. t. Qed.
 
-      Hint Unfold zdau_inner : points_as_coordinates.
+    (* ZDAU(P, Q) = (2P + Q, Q) if P <> Q, Q <> -P *)
+    Lemma zdau_naive_correct (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q):
+      let '(R1, R2) := zdau_naive P Q H in
+      z_of R1 <> 0 ->
+      eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
+    Proof.
+      destruct (zdau_naive P Q H) as [R1 R2] eqn:HR.
+      intros HR1. unfold zdau_naive in HR.
+      generalize (zaddc_correct_alt (fst (zaddu P Q H)) (snd (zaddu P Q H)) (zdau_naive_obligation_1 P Q H)). rewrite HR.
+      intros A. specialize (A HR1).
+      destruct A as (A1 & A2 & A3).
+      generalize (zaddu_correct P Q H Hneq).
+      rewrite (surjective_pairing (zaddu P Q H)).
+      intros (B1 & B2 & B3).
+      repeat split; auto.
+      - rewrite <- add_double, <- A1, <- B1, <- B2; [|reflexivity].
+        rewrite add_assoc, add_comm. reflexivity.
+      - rewrite <- A2, <- B1, <- B2.
+        rewrite (add_comm P Q).
+        rewrite add_assoc. rewrite add_zero_r; [reflexivity|apply add_opp].
+    Qed.
 
-      Program Definition zdau (P Q : point)
-        (H : co_z P Q) : point * point :=
-        zdau_inner (proj1_sig P) (proj1_sig Q).
-      Next Obligation. Proof. faster_t_noclear. Qed.
-      Next Obligation. Proof. faster_t_noclear. Qed.
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 23 Co-Z doubling-addition with update (register allocation) *)
+    (* 8 field registers, 9M, 7S (instead of 11M, 5S) *)
+    Definition zdau_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
+      match P, Q return (F*F*F)*(F*F*F) with
+      | (x1, y1, z1), (x2, y2, z2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t3 := z1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t1 - t4 in
+          let t7 := t6^2 in
+          let t1 := t1 * t7 in
+          let t4 := t4 * t7 in
+          let t5 := t2 - t5 in
+          let t8 := t1 - t4 in
+          let t2 := t2 * t8 in
+          let t2 := t2 + t2 in
+          let t8 := t5^2 in
+          let t4 := t8 - t4 in
+          let t4 := t4 - t1 in
+          let t4 := t4 - t1 in
+          let t6 := t4 + t6 in
+          let t6 := t6^2 in
+          let t6 := t6 - t7 in
+          let t5 := t5 - t4 in
+          let t5 := t5^2 in
+          let t5 := t5 - t8 in
+          let t5 := t5 - t2 in
+          let t7 := t4^2 in
+          let t5 := t5 - t7 in
+          let t8 := t7 + t7 in
+          let t8 := t8 + t8 in
+          let t6 := t6 - t7 in
+          let t3 := t3 * t6 in
+          let t6 := t1 * t8 in
+          let t1 := t1 + t4 in
+          let t8 := t8 * t1 in
+          let t7 := t2 + t5 in
+          let t2 := t5 - t2 in
+          let t1 := t8 - t6 in
+          let t5 := t5 * t1 in
+          let t6 := t6 + t8 in
+          let t1 := t2^2 in
+          let t1 := t1 - t6 in
+          let t4 := t8 - t1 in
+          let t2 := t2 * t4 in
+          let t2 := t2 - t5 in
+          let t4 := t7^2 in
+          let t4 := t4 - t6 in
+          let t8 := t8 - t4 in
+          let t7 := t7 * t8 in
+          let t5 := t7 - t5 in
+          ((t1, t2, t3), (t4, t5, t3))
+      end.
 
-      Lemma zdau_naive_eq_zdau (P Q : point) (H : co_z P Q) :
-        let '(R1, R2) := zdau_naive P Q H in
-        let '(S1, S2) := zdau P Q H in
-        eq R1 S1 /\ eq R2 S2.
-      Proof. faster_t. all: try fsatz. Qed.
+    Hint Unfold zdau_inner : points_as_coordinates.
 
-      (* Direct proof is intensive, which is why we need the naive implementation *)
-      Lemma zdau_correct (P Q : point) (H : co_z P Q)
-        (Hneq : x_of P <> x_of Q):
-        let '(R1, R2) := zdau P Q H in
-        z_of R1 <> 0 ->
-        eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
-      Proof.
-        generalize (zdau_naive_correct P Q H Hneq).
-        generalize (zdau_naive_eq_zdau P Q H).
-        rewrite (surjective_pairing (zdau_naive _ _ _)).
-        rewrite (surjective_pairing (zdau _ _ _)).
-        intros [A1 A2] X Y.
-        assert (Z: forall A B, eq A B -> z_of A <> 0 -> z_of B <> 0) by (clear; intros; faster_t).
-        repeat split.
-        - rewrite <- A1. apply X. eapply Z; eauto. symmetry; assumption.
-        - rewrite <- A2. apply X. eapply Z; eauto. symmetry; assumption.
-        - clear -H. t.
-      Qed.
+    Program Definition zdau (P Q : point)
+      (H : co_z P Q) : point * point :=
+      zdau_inner (proj1_sig P) (proj1_sig Q).
+    Next Obligation. Proof. faster_t_noclear. Qed.
+    Next Obligation. Proof. faster_t_noclear. Qed.
 
-      Program Definition zdau_packed (PQ : co_z_points) : co_z_points :=
-        zdau (fst (proj1_sig PQ)) (snd (proj1_sig PQ)) _.
-      Next Obligation. Proof. faster_t. Qed.
-      Next Obligation. Proof. faster_t. Qed.
+    Lemma zdau_naive_eq_zdau (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zdau_naive P Q H in
+      let '(S1, S2) := zdau P Q H in
+      eq R1 S1 /\ eq R2 S2.
+    Proof. faster_t. all: try fsatz. Qed.
 
-      Require Import Crypto.Util.Loops.
-
-      (* Program Definition cswap_packed (b : bool) (PQ : co_z_points) : co_z_points := *)
-      (*   if b then (snd (proj1_sig PQ), fst (proj1_sig PQ)) else PQ. *)
-      (* Next Obligation. Proof. faster_t. Qed. *)
-
-      (* Definition cswap (b : bool) (PQ : point * point) : point * point := *)
-      (*   if b then (snd PQ, fst PQ) else PQ. *)
-
-      Context {cswap_packed : bool -> co_z_points -> co_z_points}.
-      Context {cswap : bool -> point * point -> point * point}.
-
-      (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
-      (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
-      (* Algorithm 14 Joye’s double-add algorithm with Co-Z addition formulæ *)
-      (* Adapted *)
-      Program Definition joye_ladder (bitsize : nat) (testbit : nat -> bool) (P : Wpoint)
-        (HPnz : P <> inr tt :> W.point) : Wpoint :=
-        (* Initialization *)
-        let P := of_affine P in
-        let b := testbit 1%nat in
-        let R1R0 := cswap_packed b (tplu_packed P _) in
-        (* loop *)
-        let '(R1R0, _) :=
-          (@while (co_z_points*nat) (fun '(R1R0, i) => if (dec (gt i bitsize)) then true else false)
-             (fun '(R1R0, i) =>
-                let b := testbit i in
-                let R1R0 := cswap_packed b R1R0 in
-                let R1R0 := cswap_packed b (zdau_packed R1R0) in
-                let i := S i in
-                (R1R0, i))
-             bitsize (* bound on loop iterations *)
-             (R1R0, 2%nat))
-        in
-        let Q0 := snd (proj1_sig R1R0) in
-        (* Remove P if lsb = 0 *)
-        let b := testbit 0%nat in
-        let Q1 := add Q0 (opp P) in
-        let (P, Q) := cswap b (Q1, Q0) in
-        to_affine P.
-      Next Obligation. Proof. t. Qed.
-    End CoZ.
-  End Jacobian.
+    (* Direct proof is intensive, which is why we need the naive implementation *)
+    Lemma zdau_correct (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q):
+      let '(R1, R2) := zdau P Q H in
+      z_of R1 <> 0 ->
+      eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
+    Proof.
+      generalize (zdau_naive_correct P Q H Hneq).
+      generalize (zdau_naive_eq_zdau P Q H).
+      rewrite (surjective_pairing (zdau_naive _ _ _)).
+      rewrite (surjective_pairing (zdau _ _ _)).
+      intros [A1 A2] X Y.
+      assert (Z: forall A B, eq A B -> z_of A <> 0 -> z_of B <> 0) by (clear; intros; faster_t).
+      repeat split.
+      - rewrite <- A1. apply X. eapply Z; eauto. symmetry; assumption.
+      - rewrite <- A2. apply X. eapply Z; eauto. symmetry; assumption.
+      - clear -H. t.
+    Qed.
+  End Co_Z.
 End Jacobian.
