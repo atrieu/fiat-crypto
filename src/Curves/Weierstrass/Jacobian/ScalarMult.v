@@ -114,13 +114,15 @@ Module ScalarMult.
       (H : snd Q = 1) :
       is_point (fst (make_co_z_inner P Q)) /\ is_point (snd (make_co_z_inner P Q)) /\ snd (fst (make_co_z_inner P Q)) = snd (snd (make_co_z_inner P Q)).
     Proof.
-      destruct (@Jacobian.make_co_z F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec (exist _ P HP) (exist _ Q HQ) ltac:(t)) as ((R0 & R1) & Y) eqn:Heq.
+      destruct (@Jacobian.make_co_z F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec (exist _ P HP) (exist _ Q HQ) ltac:(t)) as (R0 & R1) eqn:Heq.
       unfold make_co_z in Heq. inversion Heq; clear Heq.
       destruct R0 as [R0 HR0]. inversion H1; clear H1.
       destruct R1 as [R1 HR1]. inversion H2; clear H2.
-      rewrite H1, H3. unfold Jacobian.co_z in Y. unfold z_of in Y.
-      simpl in Y. repeat split; auto.
-      destruct R0 as ((? & ?) & ?); destruct R1 as ((? & ?) & ?); assumption.
+      rewrite H1, H3. repeat split; auto.
+      destruct R0 as ((? & ?) & ?); destruct R1 as ((? & ?) & ?); auto.
+      destruct P as ((? & ?) & ?); destruct Q as ((? & ?) & ?); auto.
+      simpl in H1, H3; simpl; inversion H1; inversion H3.
+      rewrite <- H8. rewrite H5. reflexivity.
     Qed.
 
     Lemma zaddu_inner_is_point (P Q : F*F*F) (HP : is_point P) (HQ : is_point Q)
@@ -221,15 +223,149 @@ Module ScalarMult.
       destruct (dec (1 = 0)); [exfalso; fsatz|rewrite HP; fsatz].
     Qed.
 
-    Lemma joye_ladder_correct
-      (n : Z) (P : Wpoint)
-      (bitsize : Z) (HPnz : P <> ∞ :> Wpoint)
-      (Hn : (0 <= n < 2^bitsize)%Z)
-      (Hbitsize : (0 <= bitsize)%Z)
-      : Weq (joye_ladder bitsize (Z.testbit n) P HPnz) (scalarmult n P).
-    Proof.
-      unfold joye_ladder; simpl.
-      cbv [joye_ladder]. simpl.
+    Section Proof.
 
+      Local Notation scalarmult := (@scalarmult_ref Wpoint Wadd Wzero Wopp).
+
+      Section Auxiliary.
+
+        Variables n scalarbitsz : Z.
+        Hypotheses (Hn : (0 <= n < 2^scalarbitsz)%Z)
+                   (Hscalarbitsz : (0 <= scalarbitsz)%Z).
+        Local Notation testbitn := (Z.testbit n).
+
+        (* Highly regular right-to-left algorithms for scalar multiplication *)
+        (* Marc Joye *)
+        (* §2.1 Double-add algorithm *)
+        Fixpoint SS (i : nat) :=
+          match i with
+          | O => Z.b2z (testbitn 0)
+          | S j => if (testbitn (Z.of_nat i)) then (2 * SS j + TT j)%Z else SS j
+          end
+        with TT (i : nat ) :=
+               match i with
+               | O => 2 - Z.b2z (testbitn 0)
+               | S j => if (testbitn (Z.of_nat i)) then TT j else (2 * TT j + SS j)%Z
+               end.
+
+        Fixpoint SS' (i : nat) :=
+          match i with
+          | O => Z.b2z (testbitn 0)
+          | S j => ((Z.b2z (testbitn (Z.of_nat i)) * 2^(Z.of_nat i)) + SS' j)%Z
+          end.
+
+        Definition TT' (i: nat) := (2^(Z.of_nat (S i)) - SS' i)%Z.
+
+        Lemma SS_is_SS' (i : nat) :
+          SS i = SS' i :> Z
+        with TT_is_TT' (i : nat) :
+          TT i = TT' i :> Z.
+        Proof.
+          { destruct i.
+            - reflexivity.
+            - cbn [SS SS'].
+              destruct (testbitn (Z.of_nat (S i))).
+              + rewrite TT_is_TT'. unfold TT'.
+                rewrite <- SS_is_SS'. cbv [Z.b2z]. lia.
+              + cbv [Z.b2z]. rewrite <- SS_is_SS'. lia. }
+          { destruct i.
+            - reflexivity.
+            - cbn [TT]. unfold TT'; fold TT'.
+              cbn [SS']. destruct (testbitn (Z.of_nat (S i))).
+              + cbv [Z.b2z]. rewrite TT_is_TT'. unfold TT'; fold TT'.
+                replace (2 ^ Z.of_nat (S (S i)))%Z with (2 * 2 ^ Z.of_nat (S i))%Z.
+                2:{ repeat rewrite <- two_power_nat_equiv.
+                    rewrite (two_power_nat_S (S i)). reflexivity. }
+                lia.
+              + cbv [Z.b2z]. rewrite TT_is_TT'.
+                unfold TT'; fold TT'. rewrite SS_is_SS'.
+                replace (2 ^ Z.of_nat (S (S i)))%Z with (2 * 2 ^ Z.of_nat (S i))%Z.
+                2:{ repeat rewrite <- two_power_nat_equiv.
+                    rewrite (two_power_nat_S (S i)). reflexivity. }
+                lia. }
+        Qed.
+
+        Lemma SS_decomposition (i : nat) :
+          SS i = Z.land n (Z.ones (Z.of_nat (S i))) :> Z.
+        Proof.
+          rewrite SS_is_SS'. induction i.
+          - cbn [SS' testbitn]. replace (Z.of_nat 1) with 1%Z by lia.
+            rewrite (Z.land_ones n 1 ltac:(lia)).
+            replace (2^1)%Z with 2%Z by reflexivity.
+            rewrite Zmod_odd. reflexivity.
+          - cbn [SS']. rewrite IHi.
+            apply Z.bits_inj'. intros k Hk.
+            rewrite Z.land_spec. rewrite (Z.testbit_ones (Z.of_nat (S (S i))) k ltac:(lia)).
+            rewrite (Zle_imp_le_bool _ _ Hk), Bool.andb_true_l.
+            rewrite Z.add_nocarry_lxor.
+            2:{ clear. apply Z.bits_inj'; intros k Hk.
+                rewrite Z.land_spec, Z.bits_0.
+                rewrite Z.land_spec.
+                rewrite (Z.testbit_ones (Z.of_nat (S i)) k ltac:(lia)).
+                rewrite (Zle_imp_le_bool _ _ Hk), Bool.andb_true_l.
+                destruct (dec (Z.lt k (Z.of_nat (S i)))).
+                - rewrite (proj1 (Zlt_is_lt_bool k _) l), Bool.andb_true_r.
+                  replace (Z.testbit (Z.b2z (testbitn (Z.of_nat (S i))) * 2 ^ Z.of_nat (S i)) k) with false; [reflexivity|].
+                  destruct (testbitn (Z.of_nat (S i))).
+                  + rewrite Z.mul_1_l. rewrite Z.pow2_bits_false; auto. lia.
+                  + rewrite Z.mul_0_l. rewrite Z.bits_0. reflexivity.
+                - rewrite (proj2 (Z.ltb_nlt k _) n0).
+                  repeat rewrite (Bool.andb_false_r); reflexivity. }
+            rewrite Z.lxor_spec, Z.land_spec.
+            destruct (dec (Z.lt k (Z.of_nat (S (S i))))).
+            + rewrite (proj1 (Zlt_is_lt_bool k _) l).
+              rewrite Bool.andb_true_r.
+              destruct (dec (Z.lt k (Z.of_nat (S i)))).
+              * rewrite Z.ones_spec_low; [|lia].
+                rewrite Bool.andb_true_r.
+                replace (Z.testbit (Z.b2z (testbitn (Z.of_nat (S i))) * 2 ^ Z.of_nat (S i)) k) with false; [reflexivity|].
+                destruct (testbitn (Z.of_nat (S i))).
+                { rewrite Z.mul_1_l. rewrite Z.pow2_bits_false; auto. lia. }
+                { rewrite Z.mul_0_l. rewrite Z.bits_0. reflexivity. }
+              * assert (k = Z.of_nat (S i) :> Z) as -> by lia.
+                clear. rewrite Z.ones_spec_high; [|lia].
+                rewrite Bool.andb_false_r, Bool.xorb_false_r.
+                destruct (testbitn (Z.of_nat (S i))).
+                { rewrite Z.mul_1_l. rewrite Z.pow2_bits_true; auto. lia. }
+                { rewrite Z.mul_0_l. rewrite Z.bits_0. reflexivity. }
+            + rewrite (proj2 (Z.ltb_nlt k _) n0).
+              rewrite Bool.andb_false_r. rewrite Z.ones_spec_high; [|lia].
+              rewrite Bool.andb_false_r, Bool.xorb_false_r.
+              destruct (testbitn (Z.of_nat (S i))).
+              * rewrite Z.mul_1_l. rewrite Z.pow2_bits_false; auto. lia.
+              * rewrite Z.mul_0_l. rewrite Z.bits_0. reflexivity.
+        Qed.
+
+        Lemma SSn :
+          SS (Z.to_nat scalarbitsz) = n :> Z.
+        Proof.
+          rewrite SS_decomposition.
+          apply Ones.Z.land_ones_low_alt. split; [lia|].
+          clear -Hn Hscalarbitsz. destruct Hn.
+          rewrite <- two_power_nat_equiv, two_power_nat_S.
+          assert (n < two_power_nat (Z.to_nat scalarbitsz))%Z; [|lia].
+          rewrite two_power_nat_equiv, Z2Nat.id; auto.
+        Qed.
+
+      End Auxiliary.
+
+      (* We compute [n]P where P ≠ ∞ and n < ord(P) *)
+      Context {n scalarbitsz : Z}
+              {Hn : (0 <= n < 2^scalarbitsz)%Z}
+              {Hscalarbitsz : (0 <= scalarbitsz)%Z}
+              {P : Wpoint} {HPnz : P <> ∞ :> Wpoint}
+              {ordP : Z} {HordPpos : (0 <= ordP)%Z}
+              {HordP : forall k, (0 <= k < ordP)%Z -> scalarmult k P <> ∞ :> Wpoint}
+              {HnP : (n + 1 < ordP)%Z}.
+
+      Local Notation testbitn := (Z.testbit n).
+
+      Lemma joye_ladder_correct :
+        Weq (joye_ladder scalarbitsz (Z.testbit n) P HPnz) (scalarmult n P).
+      Proof.
+        (* TODO *)
+      Admitted.
+
+    End Proof.
   End JoyeLadder.
 End ScalarMult.
