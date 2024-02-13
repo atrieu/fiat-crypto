@@ -2,7 +2,8 @@ Require Import Coq.Classes.Morphisms.
 
 Require Import Crypto.Spec.WeierstrassCurve Crypto.Algebra.ScalarMult.
 Require Import Crypto.Curves.Weierstrass.Jacobian.Jacobian.
-Require Import Crypto.Curves.Weierstrass.Affine Crypto.Curves.Weierstrass.Jacobian.CoZ.
+Require Import Crypto.Curves.Weierstrass.Affine Crypto.Curves.Weierstrass.AffineProofs.
+Require Import Crypto.Curves.Weierstrass.Jacobian.CoZ.
 Require Import Crypto.Util.Decidable Crypto.Algebra.Field.
 Require Import Crypto.Util.Tactics.BreakMatch.
 Require Import Crypto.Util.Tactics.DestructHead.
@@ -30,13 +31,17 @@ Module ScalarMult.
     Local Infix "+" := Fadd. Local Infix "-" := Fsub.
     Local Infix "*" := Fmul. Local Infix "/" := Fdiv.
     Local Notation "x ^ 2" := (x*x). Local Notation "x ^ 3" := (x^2*x).
-    Local Notation "2" := (1+1). Local Notation "8" := (2+2+2+2).
+    Local Notation "2" := (1+1). Local Notation "4" := (2+1+1).
+    Local Notation "8" := (4+4). Local Notation "27" := (4*4 + 4+4 +1+1+1).
     Local Notation "'∞'" := (@W.zero F Feq Fadd Fmul a b).
     Local Notation Wpoint := (@W.point F Feq Fadd Fmul a b).
+    Context {char_ge_12:@Ring.char_ge F Feq Fzero Fone Fopp Fadd Fsub Fmul 12%positive}
+            {discriminant_nonzero:id(4*a*a*a + 27*b*b <> 0)}.
     Local Notation Wopp := (@W.opp F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec).
     Local Notation Wadd := (@W.add F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv field Feq_dec char_ge_3 a b).
     Local Notation Wzero := (@W.zero F Feq Fadd Fmul a b).
     Local Notation Weq := (@W.eq F Feq Fadd Fmul a b).
+    Local Notation Wgroup := (@W.commutative_group F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec char_ge_3 char_ge_12 discriminant_nonzero).
     Local Notation point := (@Jacobian.point F Feq Fzero Fadd Fmul a b Feq_dec).
     Local Notation eq := (@Jacobian.eq F Feq Fzero Fadd Fmul a b Feq_dec).
     Local Notation x_of := (@Jacobian.x_of F Feq Fzero Fadd Fmul a b Feq_dec).
@@ -355,15 +360,48 @@ Module ScalarMult.
               {Hscalarbitsz : (0 <= scalarbitsz)%Z}
               {P : Wpoint} {HPnz : P <> ∞ :> Wpoint}
               {ordP : Z} {HordPpos : (0 <= ordP)%Z}
-              {HordP : forall k, (0 <= k < ordP)%Z -> scalarmult k P <> ∞ :> Wpoint}
-              {HnP : (n + 1 < ordP)%Z}.
+              {HordP : forall k, (0 < k < ordP)%Z -> scalarmult k P <> ∞ :> Wpoint}
+              {HordPn : (n + 1 < ordP)%Z}.
 
       Local Notation testbitn := (Z.testbit n).
 
-      Lemma joye_ladder_correct :
-        Weq (joye_ladder scalarbitsz (Z.testbit n) P HPnz) (scalarmult n P).
+      Lemma Hnpone :
+        (0 < scalarbitsz)%Z ->
+        (Z.odd n = false :> bool) ->
+        (0 <= n + 1 < 2^scalarbitsz)%Z.
       Proof.
-        (* TODO *)
+        intros X Y. split; [lia|].
+        destruct (dec (Z.lt (n + 1)%Z (2 ^ scalarbitsz)%Z)); auto.
+        assert (Z.succ n = 2 ^ scalarbitsz :> Z)%Z by lia.
+        assert (Z.odd n = true :> bool); [|congruence].
+        rewrite <- Z.even_succ, H, <- Z.negb_odd, <- Z.bit0_odd.
+        rewrite Z.pow2_bits_false; auto. lia.
+      Qed.
+
+      Local Instance Equivalence_Weq : Equivalence Weq.
+      Proof. apply Wgroup.(Hierarchy.commutative_group_group).(Hierarchy.group_monoid).(Hierarchy.monoid_Equivalence). Qed.
+
+      Lemma joye_ladder_correct0 (Hscalarbitsz0 : scalarbitsz = 0%Z :> Z) :
+        Weq (joye_ladder scalarbitsz testbitn P HPnz) (scalarmult 0%Z P).
+      Proof.
+        subst scalarbitsz. assert (n = 0%Z :> Z) by lia. subst n. simpl.
+        rewrite <- (Jacobian.to_affine_of_affine Wzero).
+        unfold joye_ladder. apply Jacobian.Proper_to_affine.
+        unfold eq; simpl. destruct P as [ [ [X Y] | ?] HP]; [|elim HPnz; clear; t].
+        cbn [W.coordinates]. rewrite (surjective_pairing (joye_ladder_inner 0 (Z.testbit 0) _)).
+        rewrite (surjective_pairing (fst _)).
+        destruct (dec (snd (joye_ladder_inner 0 (Z.testbit 0) (X, Y, 1)) = 0)) as [?|HH]; [reflexivity| elim HH].
+        cbn. fsatz.
+      Qed.
+
+      Lemma joye_ladder_correct :
+        Weq (joye_ladder scalarbitsz testbitn P HPnz) (scalarmult n P).
+      Proof.
+        destruct (dec (0 < scalarbitsz)%Z).
+        - admit.
+        - rewrite joye_ladder_correct0; [|lia].
+          assert (scalarbitsz = 0%Z :> Z) as -> by lia.
+          assert (n = 0%Z :> Z) as -> by lia. reflexivity.
       Admitted.
 
     End Proof.
