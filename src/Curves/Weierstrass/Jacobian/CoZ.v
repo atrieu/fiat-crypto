@@ -463,6 +463,10 @@ Module Jacobian.
     Definition co_z (P Q : point) : Prop :=
       z_of P = z_of Q.
 
+    Lemma opp_co_z (P : point) :
+      co_z P (opp P).
+    Proof. unfold co_z; faster_t. Qed.
+
     Definition make_co_z_inner (P Q : F*F*F) : (F*F*F) * (F*F*F) :=
       match P, Q with
       | (x1, y1, z1), (x2, y2, z2) =>
@@ -548,6 +552,11 @@ Module Jacobian.
       clear -B. t.
     Qed.
 
+    Lemma zaddu_correct0 (P : point) :
+      let '(R1, R2) := zaddu P (opp P) (opp_co_z P) in
+      z_of R1 = 0 /\ co_z R1 R2.
+    Proof. faster_t_noclear. Qed.
+
     (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
     (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
     (* Algorithm 20 Conjugate co-Z addition (register allocation) *)
@@ -615,6 +624,11 @@ Module Jacobian.
       clear -B. t.
     Qed.
 
+    Lemma zaddc_correct0 (P : point) :
+      let '(R1, R2) := zaddc P (opp P) (opp_co_z P) in
+      z_of R1 = 0 /\ co_z R1 R2.
+    Proof. faster_t_noclear. Qed.
+
     (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
     (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
     (* Algorithm 21 Co-Z doubling with update (register allocation) *)
@@ -675,6 +689,12 @@ Module Jacobian.
       clear -B. t.
     Qed.
 
+    Lemma dblu_correct0 (P : point) (H : z_of P = 1)
+      (Hyz : y_of P = 0) :
+      let '(R1, R2) := dblu P H in
+      z_of R1 = 0 /\ co_z R1 R2.
+    Proof. faster_t. Qed.
+
     (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
     (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
     (* Algorithm 22 Co-Z tripling with update (register allocation) *)
@@ -697,6 +717,11 @@ Module Jacobian.
 
     Lemma tplu_tplu2 (P : point) (H : z_of P = 1) :
       eq (fst (tplu P H)) (fst (tplu2 P H)) /\ eq (snd (tplu P H)) (snd (tplu2 P H)).
+    Proof. faster_t. Qed.
+
+    Lemma tplu_correct0 (P : point) (H : z_of P = 1) (Hyz : y_of P = 0) :
+      let '(R1, R2) := tplu P H in
+      z_of R1 = 0 /\ co_z R1 R2.
     Proof. faster_t. Qed.
 
     Lemma tplu_correct (P : point) (H : z_of P = 1) (Hynz : y_of P <> 0) :
@@ -842,5 +867,10 @@ Module Jacobian.
       - rewrite <- A2. apply X. eapply Z; eauto. symmetry; assumption.
       - clear -H. t.
     Qed.
+
+    Lemma zdau_correct0 (P : point) :
+      let '(R1, R2) := zdau P (opp P) (opp_co_z P) in
+      z_of R1 = 0 /\ co_z R1 R2.
+    Proof. faster_t. Qed.
   End Co_Z.
 End Jacobian.
