@@ -392,23 +392,67 @@ Module ScalarMult.
           apply Ones.Z.land_ones_low_alt. split; lia.
         Qed.
 
+        Lemma SS_plus_TT (k: nat) :
+          (SS k + TT k)%Z = (2^(Z.of_nat (S k)))%Z :> Z.
+        Proof.
+          rewrite SS_is_SS', TT_is_TT'.
+          unfold TT'. lia.
+        Qed.
+
+        Lemma SS_sub_TT0 :
+          (TT 0 - SS 0)%Z = (2 * (1 - Z.b2z (testbitn 0)))%Z :> Z.
+        Proof. unfold TT, SS. lia. Qed.
+
+        Lemma SS_sub_TT_S (k : nat) :
+          if testbitn (Z.of_nat (S k)) then
+            (SS (S k) - TT (S k))%Z = (2 * SS k)%Z :> Z
+          else
+            (TT (S k) - SS (S k))%Z = (2 * TT k)%Z :> Z.
+        Proof. cbn [SS TT]. destruct (testbitn (Z.of_nat (S k))); lia. Qed.
+
+        Lemma SS_bounds (k : nat) :
+          (0 <= SS k <= n)%Z.
+        Proof.
+          rewrite SS_decomposition, Z.land_ones; [|lia].
+          split; [apply Z_mod_nonneg_nonneg| apply Z.mod_le]; lia.
+        Qed.
+
+        Lemma SS_bounds2 (k : nat) :
+          (0 <= SS k <= 2^(Z.of_nat (S k)))%Z.
+        Proof.
+          rewrite SS_is_SS'. induction k.
+          - simpl. destruct (Z.odd n); simpl; lia.
+          - cbn [SS']. destruct (testbitn (Z.of_nat (S k))); cbn [Z.b2z];
+              repeat rewrite <- two_power_nat_equiv in *;
+              repeat rewrite two_power_nat_S in *; lia.
+        Qed.
+
+        Lemma TT_bounds (k : nat) :
+          (0 <= TT k <= 2^(Z.of_nat (S k)))%Z.
+        Proof.
+          rewrite TT_is_TT'; unfold TT'. rewrite <- SS_is_SS'.
+          generalize (SS_bounds2 k). intros HH. lia.
+        Qed.
       End Auxiliary.
 
       (* We compute [n]P where P ≠ ∞ and n < ord(P) *)
       Context {n scalarbitsz : Z}
-              {Hn : (0 <= n < 2^scalarbitsz)%Z}
-              {Hscalarbitsz : (0 < scalarbitsz)%Z}
+              {Hn : (2 <= n < 2^scalarbitsz)%Z}
+              {Hscalarbitsz : (2 <= scalarbitsz)%Z}
               {P : Wpoint} {HPnz : P <> ∞ :> Wpoint}
               {ordP : Z} {HordPpos : (3 < ordP)%Z}
               {HordP : forall k, (0 < k < ordP)%Z -> not (Weq (scalarmult k P) ∞)}
-              {HordPn : (n + 1 < ordP)%Z}.
+              {HordPn : (n + 2 < ordP)%Z}
+
+              (* Is this realistic ? *)
+              {HordPbig : (2^(scalarbitsz - 1) <= ordP)%Z}.
 
       Local Notation testbitn := (Z.testbit n).
       Local Notation n' := (if testbitn 0 then n else (n + 1)%Z).
       Local Notation testbitn' := (Z.testbit n').
 
       Lemma Hn' :
-        (0 <= n' < 2^scalarbitsz)%Z.
+        (2 <= n' < 2^scalarbitsz)%Z.
       Proof.
         split; [destruct (testbitn 0); lia|].
         destruct (testbitn 0) eqn:Y; [lia|].
@@ -516,11 +560,12 @@ Module ScalarMult.
             apply Jacobian.Proper_to_affine.
             rewrite scalarmult_scalarmult'; [|lia].
             rewrite <- (@scalarmult_0_l point eq add zero opp scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)) at 1.
-            replace 0%Z with (1 - 1)%Z by lia.
-            rewrite (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 1 1).
-            rewrite A at 1.
-            rewrite <- (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 2 1).
-            replace (2 - 1)%Z with 1%Z by lia. reflexivity.
+            replace 1%Z with (2 - 1)%Z by lia.
+            rewrite (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 2 1).
+            rewrite A.
+            rewrite <- (@scalarmult_opp_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+            rewrite <- (@scalarmult_add_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 2 (- 2)).
+            replace (2 + -2)%Z with 0%Z by lia. reflexivity.
           - rewrite A1, A2 in A.
             elim (HordP 3%Z ltac:(lia)).
             rewrite <- (Jacobian.to_affine_of_affine). symmetry.
@@ -571,18 +616,23 @@ Module ScalarMult.
         set (inv :=
                fun '(R1, R0, i) =>
                  is_point R1 /\ is_point R0 /\ snd R1 = snd R0 /\
+                   (2 <= i <= scalarbitsz)%Z  /\
                    forall (pR1 : is_point R1) (pR0 : is_point R0),
-                     eq (exist _ R1 pR1) (scalarmult' (TT n' ((Z.to_nat i) - 1)%nat) (of_affine P))
-                     /\ eq (exist _ R0 pR0) (scalarmult' (SS n' ((Z.to_nat i) - 1)%nat) (of_affine P))).
+                     (eq (exist _ R1 pR1) (scalarmult' (TT n' ((Z.to_nat i) - 1)%nat) (of_affine P))
+                     /\ eq (exist _ R0 pR0) (scalarmult' (SS n' ((Z.to_nat i) - 1)%nat) (of_affine P)))
+                     /\ ((i < scalarbitsz - 1)%Z -> x_of (exist _ R1 pR1) <> x_of (exist _ R0 pR0))).
         assert (WWinv : inv WW /\ (snd WW = scalarbitsz :> Z)).
         { set (measure := fun (state : ((F*F*F)*(F*F*F)*BinNums.Z)) => ((Z.to_nat scalarbitsz) + 2 - (Z.to_nat (snd state)))%nat).
           unfold WW. replace (Z.to_nat scalarbitsz) with (measure (R1, R0, 2%Z)) by (unfold measure; simpl; lia).
           eapply (while.by_invariant inv measure (fun s => inv s /\ (snd s = scalarbitsz :> Z))).
-          - unfold inv. split; [|split].
+          - unfold inv. do 3 (try split).
             + unfold R1. destruct (testbitn 1);
               match goal with |- is_point (proj1_sig ?X) => destruct X as (? & ?Y); exact Y end.
             + unfold R0. destruct (testbitn 1);
               match goal with |- is_point (proj1_sig ?X) => destruct X as (? & ?Y); exact Y end.
+            + destruct (tplu_scalarmult' HPaff) as [Heq1 [Heq2 Heqz] ].
+              fold TPLU in Heq1, Heq2, Heqz. intros.
+              unfold R1, R0; unfold co_z, z_of in Heqz; destruct (proj1_sig (snd TPLU)) as ((? & ?) & ?); destruct (proj1_sig (fst TPLU)) as ((? & ?) & ?); destruct (testbitn 1); simpl; fsatz.
             + replace (Z.to_nat 2 - 1)%nat with 1%nat by lia.
               cbn [TT SS]. rewrite Htestbitn'0.
               replace (Z.of_nat 1%nat) with 1%Z by lia.
@@ -590,39 +640,128 @@ Module ScalarMult.
               cbn [Z.b2z]. replace (2 - 1)%Z with 1%Z by lia.
               replace (2 * 1 + 1)%Z with 3%Z by lia.
               destruct (tplu_scalarmult' HPaff) as [Heq1 [Heq2 Heqz] ].
-              fold TPLU in Heq1, Heq2, Heqz. intros.
-              split; [unfold R1, R0; unfold co_z, z_of in Heqz; destruct (proj1_sig (snd TPLU)) as ((? & ?) & ?); destruct (proj1_sig (fst TPLU)) as ((? & ?) & ?); destruct (testbitn 1); simpl; fsatz|].
-              intros. unfold R1, R0; destruct (testbitn 1); rewrite <- Heq1, <- Heq2; split; eapply eq_proof_irr; reflexivity.
-          - admit. }
+              fold TPLU in Heq1, Heq2, Heqz. split; [lia|].
+              intros. split.
+              * intros. unfold R1, R0; destruct (testbitn 1); rewrite <- Heq1, <- Heq2; split; eapply eq_proof_irr; reflexivity.
+              * intros AB Hxe. destruct (co_xz_implies (fst TPLU) (snd TPLU)).
+                { unfold x_of. unfold R1, R0 in Hxe.
+                  destruct (proj1_sig (snd TPLU)) as ((? & ?) & ?); destruct (proj1_sig (fst TPLU)) as ((? & ?) & ?); destruct (testbitn 1); simpl; fsatz. }
+                { exact Heqz. }
+                { rewrite Heq1, Heq2 in H.
+                  eapply (HordP 2 ltac:(lia)).
+                  rewrite <- (Jacobian.to_affine_of_affine). symmetry.
+                  rewrite <- (Jacobian.to_affine_of_affine) at 1.
+                  apply Jacobian.Proper_to_affine.
+                  rewrite scalarmult_scalarmult'; [|lia].
+                  replace 2%Z with (3 + (- 1))%Z by lia.
+                  rewrite (@scalarmult_add_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 3 (-1)).
+                  rewrite H.
+                  rewrite <- (@scalarmult_add_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 1 (-1)).
+                  replace (1 + -1)%Z with 0%Z by lia.
+                  rewrite <- (@scalarmult_0_l point eq add zero opp scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)) at 1.
+                  reflexivity. }
+                { rewrite Heq1, Heq2 in H.
+                  eapply (HordP 4).
+                  - split; [lia|].
+                    assert (4 < 2 ^ (scalarbitsz - 1))%Z; [|lia].
+                    replace 4%Z with (Z.pow 2 2)%Z by lia. clear -AB.
+                    apply Z.pow_lt_mono_r; auto; lia.
+                  - rewrite <- (Jacobian.to_affine_of_affine). symmetry.
+                    rewrite <- (Jacobian.to_affine_of_affine) at 1.
+                    apply Jacobian.Proper_to_affine.
+                    rewrite scalarmult_scalarmult'; [|lia].
+                    rewrite (@scalarmult_1_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)) in H.
+                    rewrite <- (@scalarmult_opp1_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)) in H.
+                    replace 4%Z with (3 - -1)%Z by lia.
+                    rewrite (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) 3 (-1) (of_affine P)).
+                    rewrite H.
+                    rewrite <- (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (-1) (-1) (of_affine P)).
+                    replace (-1 - (-1))%Z with 0%Z by lia.
+                    apply (@scalarmult_0_l point eq add zero opp scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)). }
+          - intros s Hinv. destruct s as ((X1 & X0) & i).
+            destruct Hinv as (HX1 & HX0 & HXze & Hi & Heqs).
+            destruct (Z.ltb i scalarbitsz) eqn:Hltb.
+            + split.
+              * (* invariant preservation *)
+                admit.
+              * (* measure decreases *)
+                replace (if testbitn i then (X0, X1) else (X1, X0)) with (if testbitn i then X0 else X1, if testbitn i then X1 else X0) by (destruct (testbitn i); reflexivity).
+                destruct (zdau_inner (if testbitn i then X0 else X1) (if testbitn i then X1 else X0)); destruct (testbitn i); unfold measure; simpl; lia.
+            + (* post condition *)
+              split; [split; auto|].
+              simpl. rewrite Z.ltb_ge in Hltb. lia. }
         destruct WW as ((R1' & R0') & I).
-        simpl in WWinv. destruct WWinv as [ [HpR1 [HpR0 [Hz WWinv] ] ] ->].
-        specialize (WWinv HpR1 HpR0). destruct WWinv as [HR1eq HR0eq].
-        rewrite SSn in HR0eq; [|apply Hn'|lia].
+        simpl in WWinv. destruct WWinv as [ [HpR1 [HpR0 [Hz [_ WWinv] ] ] ] ->].
+        specialize (WWinv HpR1 HpR0). destruct WWinv as [ [HR1eq HR0eq] _].
+        rewrite SSn in HR0eq; [|generalize Hn'; fold n'; lia|lia].
         replace (opp_inner (proj1_sig (of_affine P))) with (proj1_sig (opp (of_affine P))) by reflexivity.
         assert (HPaff' : z_of (opp (of_affine P)) = 1) by (destruct P as [ [ [X Y] | ?] HP] eqn:HPeq; [reflexivity|elim HPnz; clear; t]).
         pose (COZ := make_co_z (exist _ R0' HpR0) (opp (of_affine P)) HPaff').
         replace (make_co_z_inner R0' (proj1_sig (opp (of_affine P)))) with (proj1_sig (fst COZ), proj1_sig (snd COZ)) by (symmetry; unfold COZ, make_co_z; simpl; apply surjective_pairing).
-        assert (HR0znz : z_of (exist is_point R0' HpR0) <> 0) by admit.
+        assert (HR0znz : z_of (exist is_point R0' HpR0) <> 0).
+        { intro. apply (HordP (if Z.odd n then n else (n + 1)%Z)).
+          - destruct (Z.odd n); lia.
+          - rewrite <- (Jacobian.to_affine_of_affine). symmetry.
+            rewrite <- (Jacobian.to_affine_of_affine) at 1.
+            apply Jacobian.Proper_to_affine.
+            rewrite scalarmult_scalarmult'; [|destruct (Z.odd n); lia].
+            rewrite <- HR0eq. unfold z_of in H. unfold eq, zero. simpl.
+            simpl in H. destruct (dec (0 = 0)) as [?|Hnn]; [|elim Hnn; reflexivity].
+            destruct R0' as ((? & ?) & ?); auto. }
         destruct (@Jacobian.make_co_z_correct F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field Feq_dec (exist is_point R0' HpR0) (opp (of_affine P)) HPaff' HR0znz) as (Heq0 & Heq1 & HCOZ).
         rewrite Heq0 in HR0eq.
         rewrite <- (@scalarmult_opp1_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)) in Heq1 at 1.
         set (ZADDU := zaddu (fst COZ) (snd COZ) HCOZ).
         replace (zaddu_inner (proj1_sig (fst COZ)) (proj1_sig (snd COZ))) with (proj1_sig (fst ZADDU), proj1_sig (snd ZADDU)) by (symmetry; unfold ZADDU, zaddu; simpl; apply surjective_pairing).
-        generalize (@Jacobian.zaddu_correct F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field char_ge_3 Feq_dec (fst COZ) (snd COZ) HCOZ).
-
-
+        assert (Hxne: x_of (fst COZ) <> x_of (snd COZ)).
+        { intro Hxe. destruct (co_xz_implies _ _ Hxe HCOZ) as [HEq|HNeq].
+          - unfold COZ in HEq.
+            rewrite HR0eq in HEq.
+            rewrite <- Heq1 in HEq.
+            apply (HordP ((if Z.odd n then n else (n + 1)%Z) - -1)%Z).
+            + split; destruct (Z.odd n); lia.
+            + rewrite <- (Jacobian.to_affine_of_affine). symmetry.
+              rewrite <- (Jacobian.to_affine_of_affine) at 1.
+              apply Jacobian.Proper_to_affine.
+              rewrite scalarmult_scalarmult'; [|destruct (Z.odd n); lia].
+              rewrite (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+              rewrite HEq.
+              rewrite <- (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+              replace (-1 - -1)%Z with 0%Z by lia.
+              apply (@scalarmult_0_l point eq add zero opp scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)).
+          - unfold COZ in HNeq.
+            rewrite HR0eq in HNeq.
+            rewrite <- Heq1 in HNeq.
+            apply (HordP ((if Z.odd n then n else (n + 1)%Z) - 1)%Z).
+            + split; destruct (Z.odd n); lia.
+            + rewrite <- (Jacobian.to_affine_of_affine). symmetry.
+              rewrite <- (Jacobian.to_affine_of_affine) at 1.
+              apply Jacobian.Proper_to_affine.
+              rewrite scalarmult_scalarmult'; [|destruct (Z.odd n); lia].
+              rewrite (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+              rewrite HNeq.
+              rewrite <- (@scalarmult_opp_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)) at 1.
+              rewrite <- (@scalarmult_sub_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+              replace (- -1 - 1)%Z with 0%Z by lia.
+              apply (@scalarmult_0_l point eq add zero opp scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup) (of_affine P)). }
+        generalize (@Jacobian.zaddu_correct F Feq Fzero Fone Fopp Fadd Fsub Fmul Finv Fdiv a b field char_ge_3 Feq_dec (fst COZ) (snd COZ) HCOZ Hxne).
+        fold ZADDU. rewrite (surjective_pairing ZADDU) at 1.
+        intros [Heq2 [Heq3 HCOZ1] ]. rewrite Z.bit0_odd.
+        replace (if Z.odd n then (proj1_sig (snd ZADDU), proj1_sig (fst ZADDU)) else (proj1_sig (fst ZADDU), proj1_sig (snd ZADDU))) with (proj1_sig (if Z.odd n then snd ZADDU else fst ZADDU), proj1_sig (if Z.odd n then fst ZADDU else snd ZADDU)) by (destruct (Z.odd n); reflexivity).
+        assert (eq (if Z.odd n then snd ZADDU else fst ZADDU) (scalarmult' n (of_affine P))); auto.
+        destruct (Z.odd n); fold COZ in Heq0, Heq1, HR0eq.
+        - rewrite <- Heq3, HR0eq. reflexivity.
+        - rewrite <- Heq2, HR0eq, <- Heq1.
+          rewrite <- (@scalarmult_add_l point eq add zero opp Pgroup scalarmult' (@scalarmult_ref_is_scalarmult _ _ _ _ _ Pgroup)).
+          replace (n + 1 + -1)%Z with n by lia. reflexivity.
       Admitted.
 
       Lemma joye_ladder_correct :
         Weq (joye_ladder scalarbitsz testbitn P HPnz) (scalarmult n P).
       Proof.
-        destruct (dec (0 < scalarbitsz)%Z).
-        - rewrite <- (Jacobian.to_affine_of_affine (scalarmult n P)).
-          apply Jacobian.Proper_to_affine. rewrite scalarmult_scalarmult'; [|lia].
-          eapply joye_inner_correct.
-        - rewrite joye_ladder_correct0; [|lia].
-          assert (scalarbitsz = 0%Z :> Z) as -> by lia.
-          assert (n = 0%Z :> Z) as -> by lia. reflexivity.
+        rewrite <- (Jacobian.to_affine_of_affine (scalarmult n P)).
+        apply Jacobian.Proper_to_affine. rewrite scalarmult_scalarmult'; [|lia].
+        eapply joye_inner_correct.
       Qed.
 
     End Proof.
