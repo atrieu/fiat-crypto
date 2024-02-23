@@ -756,7 +756,7 @@ Module Jacobian.
 
     (* ZDAU(P, Q) = (2P + Q, Q) if P <> Q, Q <> -P *)
     Lemma zdau_naive_correct (P Q : point) (H : co_z P Q)
-      (Hneq : x_of P <> x_of Q):
+      (Hneq : x_of P <> x_of Q) :
       let '(R1, R2) := zdau_naive P Q H in
       z_of R1 <> 0 ->
       eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
@@ -766,6 +766,27 @@ Module Jacobian.
       generalize (zaddc_correct_alt (fst (zaddu P Q H)) (snd (zaddu P Q H)) (zdau_naive_obligation_1 P Q H)). rewrite HR.
       intros A. specialize (A HR1).
       destruct A as (A1 & A2 & A3).
+      generalize (zaddu_correct P Q H Hneq).
+      rewrite (surjective_pairing (zaddu P Q H)).
+      intros (B1 & B2 & B3).
+      repeat split; auto.
+      - rewrite <- add_double, <- A1, <- B1, <- B2; [|reflexivity].
+        rewrite add_assoc, add_comm. reflexivity.
+      - rewrite <- A2, <- B1, <- B2.
+        rewrite (add_comm P Q).
+        rewrite add_assoc. rewrite add_zero_r; [reflexivity|apply add_opp].
+    Qed.
+
+    Lemma zdau_naive_correct_alt (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q)
+      (Hneq2: x_of (fst (zaddu P Q H)) <> x_of (snd (zaddu P Q H))) :
+      let '(R1, R2) := zdau_naive P Q H in
+      eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
+    Proof.
+      destruct (zdau_naive P Q H) as [R1 R2] eqn:HR.
+      unfold zdau_naive in HR.
+      generalize (zaddc_correct (fst (zaddu P Q H)) (snd (zaddu P Q H)) (zdau_naive_obligation_1 P Q H) Hneq2). rewrite HR.
+      intros (A1 & A2 & A3).
       generalize (zaddu_correct P Q H Hneq).
       rewrite (surjective_pairing (zaddu P Q H)).
       intros (B1 & B2 & B3).
@@ -851,7 +872,7 @@ Module Jacobian.
 
     (* Direct proof is intensive, which is why we need the naive implementation *)
     Lemma zdau_correct (P Q : point) (H : co_z P Q)
-      (Hneq : x_of P <> x_of Q):
+      (Hneq : x_of P <> x_of Q) :
       let '(R1, R2) := zdau P Q H in
       z_of R1 <> 0 ->
       eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
@@ -865,6 +886,24 @@ Module Jacobian.
       repeat split.
       - rewrite <- A1. apply X. eapply Z; eauto. symmetry; assumption.
       - rewrite <- A2. apply X. eapply Z; eauto. symmetry; assumption.
+      - clear -H. t.
+    Qed.
+
+    Lemma zdau_correct_alt (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q)
+      (Hneq2: x_of (fst (zaddu P Q H)) <> x_of (snd (zaddu P Q H))) :
+      let '(R1, R2) := zdau P Q H in
+      eq (add (double P) Q) R1 /\ eq Q R2 /\ co_z R1 R2.
+    Proof.
+      generalize (zdau_naive_correct_alt P Q H Hneq Hneq2).
+      generalize (zdau_naive_eq_zdau P Q H).
+      rewrite (surjective_pairing (zdau_naive _ _ _)).
+      rewrite (surjective_pairing (zdau _ _ _)).
+      intros [A1 A2] [A3 [A4 A5] ].
+      assert (Z: forall A B, eq A B -> z_of A <> 0 -> z_of B <> 0) by (clear; intros; faster_t).
+      repeat split.
+      - rewrite <- A1. auto.
+      - rewrite <- A2. auto.
       - clear -H. t.
     Qed.
 
