@@ -10,7 +10,7 @@ Require Import Crypto.Util.Tactics.SpecializeBy.
 Require Import Crypto.Util.Tactics.SetoidSubst.
 Require Import Crypto.Util.Notations Crypto.Util.LetIn.
 Require Import Crypto.Util.Sum Crypto.Util.Prod Crypto.Util.Sigma.
-Require Import Crypto.Util.FsatzAutoLemmas.
+Require Import Crypto.Util.Tuple Crypto.Util.FsatzAutoLemmas.
 Require Import Coq.PArith.BinPos.
 
 Module Jacobian.
@@ -74,6 +74,11 @@ Module Jacobian.
     Ltac prept := repeat prept_step.
     Ltac t := prept; trivial; try contradiction; fsatz.
 
+    Definition to_xy (P : point) : F*F :=
+      match proj1_sig P with
+      | (X, Y, Z) => (X, Y)
+      end.
+
     Definition x_of (P : point) : F :=
       match proj1_sig P with
       | (x, y, z) => x
@@ -92,9 +97,9 @@ Module Jacobian.
     Create HintDb points_as_coordinates discriminated.
     Hint Unfold Proper respectful Reflexive Symmetric Transitive : points_as_coordinates.
     Hint Unfold Jacobian.point Jacobian.eq W.eq W.point W.coordinates proj1_sig fst snd : points_as_coordinates.
-    Hint Unfold x_of y_of z_of : points_as_coordinates.
+    Hint Unfold to_xy x_of y_of z_of : points_as_coordinates.
 
-        Local Ltac clear_neq :=
+    Local Ltac clear_neq :=
       repeat match goal with
              | [ H : _ <> _ |- _ ] => clear H
              end.
@@ -523,7 +528,44 @@ Module Jacobian.
     Next Obligation. Proof. faster_t_noclear. Qed.
     Next Obligation. Proof. faster_t. Qed.
 
-    Hint Unfold zaddu : points_as_coordinates.
+    (* (X,Y)-only ZADDU operation *)
+    (* This saves 1M and 1 field register *)
+    Definition zaddu' (P Q : F*F) : (F*F)*(F*F) :=
+      match P, Q with
+      | (x1, y1), (x2, y2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t1 - t4 in
+          let t6 := t6^2 in
+          let t1 := t1 * t6 in
+          let t6 := t6 * t4 in
+          let t5 := t2 - t5 in
+          let t4 := t5^2 in
+          let t4 := t4 - t1 in
+          let t4 := t4 - t6 in
+          let t6 := t1 - t6 in
+          let t2 := t2 * t6 in
+          let t6 := t1 - t4 in
+          let t5 := t5 * t6 in
+          let t5 := t5 - t2 in
+          ((t4, t5), (t1, t2))
+      end.
+
+    Hint Unfold zaddu zaddu' : points_as_coordinates.
+    Hint Unfold fieldwise fieldwise' : points_as_coordinates.
+
+    Lemma zaddu_zaddu'_xy_eq (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddu P Q H in
+      zaddu' (to_xy P) (to_xy Q) = (to_xy R1, to_xy R2) :> _.
+    Proof. faster_t. Qed.
+
+    Lemma zaddu_zaddu'_xy_eq_fieldwise (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddu P Q H in
+      fieldwise (n:=2) (fieldwise (n:=2) Feq)
+        (zaddu' (to_xy P) (to_xy Q)) (to_xy R1, to_xy R2).
+    Proof. faster_t. Qed.
 
     (* ZADDU(P, Q) = (P + Q, P) if P <> Q, Q <> -P *)
     Lemma zaddu_correct (P Q : point) (H : co_z P Q)
@@ -590,7 +632,55 @@ Module Jacobian.
     Next Obligation. Proof. faster_t_noclear. Qed.
     Next Obligation. Proof. faster_t_noclear. Qed.
 
-    Hint Unfold zaddc : points_as_coordinates.
+    (* (X,Y)-only ZADDC operation *)
+    (* This saves 1M and 1 field register *)
+    Definition zaddc' (P Q : F*F) : (F*F)*(F*F) :=
+      match P, Q with
+      | (x1, y1), (x2, y2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t1 - t4 in
+          let t6 := t6^2 in
+          let t7 := t1 * t6 in
+          let t6 := t6 * t4 in
+          let t1 := t2 + t5 in
+          let t4 := t1^2 in
+          let t4 := t4 - t7 in
+          let t4 := t4 - t6 in
+          let t1 := t2 - t5 in
+          let t1 := t1^2 in
+          let t1 := t1 - t7 in
+          let t1 := t1 - t6 in
+          let t6 := t6 - t7 in
+          let t6 := t6 * t2 in
+          let t2 := t2 - t5 in
+          let t5 := t5 + t5 in
+          let t5 := t2 + t5 in
+          let t7 := t7 - t4 in
+          let t5 := t5 * t7 in
+          let t5 := t5 + t6 in
+          let t7 := t4 + t7 in
+          let t7 := t7 - t1 in
+          let t2 := t2 * t7 in
+          let t2 := t2 + t6 in
+          ((t1, t2), (t4, t5))
+      end.
+
+    Hint Unfold zaddc zaddc' : points_as_coordinates.
+
+    Lemma zaddc_zaddc'_xy_eq (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddc P Q H in
+      zaddc' (to_xy P) (to_xy Q) = (to_xy R1, to_xy R2) :> _.
+    Proof. faster_t. Qed.
+
+    Lemma zaddc_zaddc'_xy_eq_fieldwise (P Q : point) (H : co_z P Q) :
+      let '(R1, R2) := zaddc P Q H in
+      fieldwise (n:=2) (fieldwise (n:=2) Feq)
+        (zaddc' (to_xy P) (to_xy Q)) (to_xy R1, to_xy R2).
+    Proof. faster_t. Qed.
+
     (* ZADDC(P, Q) = (P + Q, P - Q) if P <> Q, Q <> -P *)
     Lemma zaddc_correct (P Q : point) (H : co_z P Q)
       (Hneq : x_of P <> x_of Q):
@@ -648,7 +738,46 @@ Module Jacobian.
     Next Obligation. Proof. faster_t. Qed.
     Next Obligation. Proof. faster_t. Qed.
 
-    Hint Unfold dblu : points_as_coordinates.
+    (* (X,Y)-only DBLU operation *)
+    Definition dblu' (P : F*F) : (F*F)*(F*F) :=
+      match P with
+      | (x1, y1) =>
+          let t0 :=  a in
+          let t1 := x1 in
+          let t2 := y1 in
+          let t2 := t2^2 in
+          let t4 := t1 + t2 in
+          let t4 := t4^2 in
+          let t5 := t1^2 in
+          let t4 := t4 - t5 in
+          let t2 := t2^2 in
+          let t4 := t4 - t2 in
+          let t1 := t4 + t4 in
+          let t0 := t0 + t5 in
+          let t5 := t5 + t5 in
+          let t0 := t0 + t5 in
+          let t4 := t0^2 in
+          let t5 := t1 + t1 in
+          let t4 := t4 - t5 in
+          let t2 := 8 * t2 in
+          let t5 := t1 - t4 in
+          let t5 := t5 * t0 in
+          let t5 := t5 - t2 in
+          ((t4, t5), (t1, t2))
+      end.
+
+    Hint Unfold dblu dblu' : points_as_coordinates.
+
+    Lemma dblu_dblu'_xy_eq (P : point) (H : z_of P = 1) :
+      let '(R1, R2) := dblu P H in
+      dblu' (to_xy P) = (to_xy R1, to_xy R2) :> _.
+    Proof. faster_t. Qed.
+
+    Lemma dblu_dblu'_xy_eq_fieldwise (P : point) (H : z_of P = 1) :
+      let '(R1, R2) := dblu P H in
+      fieldwise (n:=2) (fieldwise (n:=2) Feq)
+        (dblu' (to_xy P)) (to_xy R1, to_xy R2).
+    Proof. faster_t. Qed.
 
     (* DBLU(P) = (2P, P) when Z(P) = 1 *)
     Lemma dblu_correct (P : point) (H : z_of P = 1)
@@ -682,7 +811,22 @@ Module Jacobian.
       zaddu (snd (dblu P H)) (fst (dblu P H)) _.
     Next Obligation. faster_t. Qed.
 
-    Hint Unfold tplu : points_as_coordinates.
+    (* (X,Y)-only TPLU operation *)
+    Definition tplu' (P : F*F) : (F*F)*(F*F) :=
+      zaddu' (snd (dblu' P)) (fst (dblu' P)).
+
+    Hint Unfold tplu tplu' : points_as_coordinates.
+
+    Lemma tplu_tplu'_xy_eq (P : point) (H : z_of P = 1) :
+      let '(R1, R2) := tplu P H in
+      tplu' (to_xy P) = (to_xy R1, to_xy R2) :> _.
+    Proof. faster_t. Qed.
+
+    Lemma tplu_tplu'_xy_eq_fieldwise (P : point) (H : z_of P = 1) :
+      let '(R1, R2) := tplu P H in
+      fieldwise (n:=2) (fieldwise (n:=2) Feq)
+        (tplu' (to_xy P)) (to_xy R1, to_xy R2).
+    Proof. faster_t. Qed.
 
     Lemma tplu_correct0 (P : point) (H : z_of P = 1) (Hyz : y_of P = 0) :
       let '(R1, R2) := tplu P H in
@@ -792,8 +936,7 @@ Module Jacobian.
           let t5 := t5 - t2 in
           let t7 := t4^2 in
           let t5 := t5 - t7 in
-          let t8 := t7 + t7 in
-          let t8 := t8 + t8 in
+          let t8 := 4 * t7 in
           let t6 := t6 - t7 in
           let t3 := t3 * t6 in
           let t6 := t1 * t8 in
@@ -868,5 +1011,205 @@ Module Jacobian.
       let '(R1, R2) := zdau P (opp P) (opp_co_z P) in
       z_of R1 = 0 /\ co_z R1 R2.
     Proof. faster_t. Qed.
+
+    Local Notation "16" := (8+8).
+
+    (* Scalar Multiplication on Weierstraß Elliptic Curves from Co-Z Arithmetic *)
+    (* Goundar, Joye, Miyaji, Rivain, Vanelli *)
+    (* Algorithm 25 Co-Z conjugate-addition-addition with update (register allocation) *)
+    Program Definition zacau (P Q : point) (C : F) (H : co_z P Q)
+      (H' : let x1 := x_of P in let x2 := x_of Q in C = (x1 - x2)^2) : point * point * F :=
+      match proj1_sig P, proj1_sig Q return (F*F*F)*(F*F*F)*F with
+      | (x1, y1, z1), (x2, y2, z2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t3 := z1 in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := C in
+          let t7 := t1 - t4 in
+          let t3 := t3 * t7 in
+          let t7 := t4 * t6 in
+          let t6 := t6 * t1 in
+          let t1 := t2 + t5 in
+          let t4 := t1^2 in
+          let t4 := t4 - t6 in
+          let t4 := t4 - t7 in
+          let t1 := t2 - t5 in
+          let t1 := t1^2 in
+          let t1 := t1 - t6 in
+          let t1 := t1 - t7 in
+          let t7 := t7 - t6 in
+          let t7 := t7 * t2 in
+          let t2 := t2 - t5 in
+          let t5 := t5 + t5 in
+          let t5 := t2 + t5 in
+          let t6 := t6 - t4 in
+          let t5 := t5 * t6 in
+          let t5 := t5 + t7 in
+          let t6 := t4 + t6 in
+          let t6 := t6 - t1 in
+          let t2 := t2 * t6 in
+          let t2 := t2 + t7 in
+          let t6 := t1 - t4 in
+          let t3 := t3 * t6 in
+          let t6 := t6^2 in
+          let t7 := t4 * t6 in
+          let t4 := t1 * t6 in
+          let t6 := t2 - t5 in
+          let t7 := t4 - t7 in
+          let t5 := t2 * t7 in
+          let t2 := t6^2 in
+          let t1 := t2 + t7 in
+          let t1 := t1 - t4 in
+          let t1 := t1 - t4 in
+          let t7 := t1 - t4 in
+          let t6 := t6 - t7 in
+          let t6 := t6^2 in
+          let t2 := t6 - t2 in
+          let t6 := t7^2 in
+          let t2 := t2 - t6 in
+          let t5 := t5 + t5 in
+          let t2 := t2 - t5 in
+          let t1 := 4 * t1 in
+          let t2 := 4 * t2 in
+          let t3 := t3 + t3 in
+          let t4 := 4 * t4 in
+          let t5 := 4 * t5 in
+          let t6 := 16 * t6 in
+          ((t1, t2, t3), (t4, t5, t3), t6)
+      end.
+    Next Obligation. Proof. faster_t_noclear. Qed.
+    Next Obligation. Proof. faster_t_noclear. Qed.
+
+    (* (X,Y)-only ZACAU operation *)
+    Definition zacau' (P Q : F*F) (C : F) : (F*F)*(F*F)*F :=
+      match P, Q with
+      | (x1, y1), (x2, y2) =>
+          let t1 := x1 in
+          let t2 := y1 in
+          let t3 := C in
+          let t4 := x2 in
+          let t5 := y2 in
+          let t6 := t3 * t4 in
+          let t3 := t3 * t1 in
+          let t1 := t2 + t5 in
+          let t4 := t1^2 in
+          let t4 := t4 - t3 in
+          let t4 := t4 - t6 in
+          let t1 := t2 - t5 in
+          let t1 := t1^2 in
+          let t1 := t1 - t3 in
+          let t1 := t1 - t6 in
+          let t6 := t6 - t3 in
+          let t6 := t6 * t2 in
+          let t2 := t2 - t5 in
+          let t5 := t5 + t5 in
+          let t5 := t2 + t5 in
+          let t3 := t3 - t4 in
+          let t5 := t3 * t5 in
+          let t5 := t5 + t6 in
+          let t3 := t3 + t4 in
+          let t3 := t3 - t1 in
+          let t2 := t2 * t3 in
+          let t2 := t2 + t6 in
+          let t3 := t1 - t4 in
+          let t3 := t3^2 in
+          let t6 := t3 * t4 in
+          let t4 := t1 * t3 in
+          let t3 := t2 - t5 in
+          let t6 := t4 - t6 in
+          let t5 := t2 * t6 in
+          let t2 := t3^2 in
+          let t1 := t2 + t6 in
+          let t1 := t1 - t4 in
+          let t1 := t1 - t4 in
+          let t6 := t1 - t4 in
+          let t3 := t3 - t6 in
+          let t3 := t3^2 in
+          let t2 := t3 - t2 in
+          let t3 := t6^2 in
+          let t2 := t2 - t3 in
+          let t5 := t5 + t5 in
+          let t2 := t2 - t5 in
+          let t1 := 4 * t1 in
+          let t2 := 4 * t2 in
+          let t3 := 16 * t3 in
+          let t4 := 4 * t4 in
+          let t5 := 4 * t5 in
+          ((t1, t2), (t4, t5), t3)
+      end.
+
+    Hint Unfold zacau zacau' : points_as_coordinates.
+
+    Program Definition zacau_naive (P Q : point) (H : co_z P Q) :=
+      zaddu (fst (zaddc P Q H)) (snd (zaddc P Q H)) _.
+    Next Obligation. Proof. faster_t. Qed.
+
+    Lemma zacau_naive_correct (P Q : point) (H : co_z P Q)
+      (Hneq : x_of P <> x_of Q) :
+      let '(R1, R2) := zacau_naive P Q H in
+      z_of R1 <> 0 ->
+      eq (double P) R1 /\ eq (add P Q) R2 /\ co_z R1 R2.
+    Proof.
+      destruct (zacau_naive P Q H) as [R1 R2] eqn:HR.
+      intros HR1. unfold zacau_naive in HR.
+      generalize (zaddu_correct_alt (fst (zaddc P Q H)) (snd (zaddc P Q H)) (zacau_naive_obligation_1 P Q H)). rewrite HR.
+      intros A. specialize (A HR1).
+      destruct A as (A1 & A2 & A3).
+      generalize (zaddc_correct P Q H Hneq).
+      rewrite (surjective_pairing (zaddc P Q H)).
+      intros (B1 & B2 & B3).
+      repeat split; auto.
+      - rewrite <- add_double, <- A1, <- B1, <- B2; [|reflexivity].
+        rewrite add_assoc, (add_comm P (opp Q)), <- (add_assoc Q).
+        rewrite (add_zero_l (add Q _)) by (apply add_opp). reflexivity.
+      - rewrite <- A2, <- B1. reflexivity.
+    Qed.
+
+    Lemma zacau_zacau'_xy_eq_fieldwise (P Q : point) (C : F) (H : co_z P Q)
+      (H' : let x1 := x_of P in let x2 := x_of Q in C = (x1 - x2)^2) :
+      let '(R1, R2, C') := zacau P Q C H H' in
+      let '(RR, C'') := zacau' (to_xy P) (to_xy Q) C in
+      fieldwise (n:=2) (fieldwise (n:=2) Feq)
+        RR (to_xy R1, to_xy R2)
+      /\ C' = C''.
+    Proof. faster_t. Qed.
+
+    Lemma zacau_naive_eq_zacau (P Q : point) (C : F) (H : co_z P Q)
+      (H' : let x1 := x_of P in let x2 := x_of Q in C = (x1 - x2)^2) :
+      let '(R1, R2) := zacau_naive P Q H in
+      let '(S1, S2, C') := zacau P Q C H H' in
+      eq R1 S1 /\ eq R2 S2.
+    Proof. faster_t. Qed.
+
+    Lemma zacau_correct (P Q : point) (C : F) (H : co_z P Q)
+      (H' : let x1 := x_of P in let x2 := x_of Q in C = (x1 - x2)^2)
+      (Hneq : C <> 0) :
+      let '(R1, R2, C') := zacau P Q C H H' in
+      z_of R1 <> 0 ->
+      eq (double P) R1 /\ eq (add P Q) R2
+      /\ (let x1' := x_of R1 in let x2' := x_of R2 in C' = (x1' - x2')^2)
+      /\ co_z R1 R2.
+    Proof.
+      cbv zeta. rewrite (surjective_pairing (zacau _ _ _ _ _)), (surjective_pairing (fst _)).
+      set (R1 := fst (fst (zacau P Q C H H'))).
+      set (R2 := snd (fst (zacau P Q C H H'))).
+      set (C' := snd (zacau P Q C H H')). intros Hznz.
+      generalize (zacau_naive_correct P Q H ltac:(faster_t)).
+      generalize (zacau_naive_eq_zacau P Q C H H').
+      rewrite (surjective_pairing (zacau_naive _ _ _)).
+      set (R1' := fst (zacau_naive P Q H)).
+      set (R2' := snd (zacau_naive P Q H)).
+      rewrite (surjective_pairing (zacau _ _ _ _ _)), (surjective_pairing (fst _)).
+      fold R1 R2. intros [A1 A2].
+      assert (Hznz' : z_of R1' <> 0) by faster_t.
+      intros A3. specialize (A3 Hznz'). destruct A3 as (A3 & A4 & A5).
+      rewrite A3, A1, A4, A2; repeat split; try reflexivity.
+      - clear. destruct P as (((X1 & Y1) & Z1) & HP).
+        destruct Q as (((X2 & Y2) & Z2) & HQ). cbv. fsatz.
+      - clear. destruct P as (((X1 & Y1) & Z1) & HP).
+        destruct Q as (((X2 & Y2) & Z2) & HQ). cbv. reflexivity.
+    Qed.
   End Co_Z.
 End Jacobian.
