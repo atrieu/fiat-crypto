@@ -26,9 +26,9 @@ Section Ring.
       eapply @left_identity; eauto with typeclass_instances.
     - eapply @right_identity; eauto with typeclass_instances.
     - eapply associative.
-  Qed. 
+  Qed.
 
-  
+
   Lemma mul_0_l : forall x, 0 * x = 0.
   Proof using Type*. apply Ncring.ring_mul_0_l. Qed.
 
@@ -39,10 +39,10 @@ Section Ring.
   Proof using Type*. rewrite ring_sub_definition. rewrite left_identity. reflexivity. Qed.
 
   Lemma mul_opp_r x y : x * opp y = opp (x * y).
-  Proof using Type*. symmetry. apply Ncring.ring_opp_mul_r. Qed. 
+  Proof using Type*. symmetry. apply Ncring.ring_opp_mul_r. Qed.
 
   Lemma mul_opp_l x y : opp x * y = opp (x * y).
-  Proof using Type*. symmetry. apply Ncring.ring_opp_mul_l. Qed. 
+  Proof using Type*. symmetry. apply Ncring.ring_opp_mul_l. Qed.
 
   Definition opp_zero_iff : forall x, opp x = 0 <-> x = 0 := Group.inv_id_iff.
 
@@ -84,8 +84,65 @@ Section Ring.
     forall x y : T, not (eq (mul x y) zero) <-> (not (eq x zero) /\ not (eq y zero)).
   Proof using Type*. intros; rewrite zero_product_iff_zero_factor; tauto. Qed.
 
-  
+
 End Ring.
+
+Section ProductRing.
+  Context {R EQ ZERO ONE OPP ADD SUB MUL} `{@ring R EQ ZERO ONE OPP ADD SUB MUL}.
+  Context {S eq zero one opp add sub mul} `{@ring S eq zero one opp add sub mul}.
+
+  Definition apply_binop_pair (f: R -> R -> R) (g: S -> S -> S) (x y: R * S): (R * S) :=
+    (f (fst x) (fst y), g (snd x) (snd y)).
+
+  Definition apply_unop_pair {R' S'} (f: R -> R') (g: S -> S') (x: R * S): (R' * S') :=
+    (f (fst x), g (snd x)).
+
+  Lemma product_ring:
+    @ring (R * S) (fun x y => EQ (fst x) (fst y) /\ eq (snd x) (snd y)) (ZERO, zero) (ONE, one) (apply_unop_pair OPP opp) (apply_binop_pair ADD add) (apply_binop_pair SUB sub) (apply_binop_pair MUL mul).
+  Proof.
+    repeat constructor; simpl;
+      [apply monoid_is_associative
+      |apply monoid_is_associative
+      |apply monoid_is_left_identity
+      |apply monoid_is_left_identity
+      |apply monoid_is_right_identity
+      |apply monoid_is_right_identity
+      |apply monoid_op_Proper; tauto
+      |apply monoid_op_Proper; tauto
+      |reflexivity|reflexivity
+      |symmetry; tauto|symmetry; tauto
+      |transitivity (fst y); tauto|transitivity (snd y); tauto
+      |apply group_is_left_inverse
+      |apply group_is_left_inverse
+      |apply group_is_right_inverse
+      |apply group_is_right_inverse
+      |apply group_inv_Proper; tauto
+      |apply group_inv_Proper; tauto
+      |apply (commutative_group_is_commutative H.(ring_commutative_group_add))
+      |apply (commutative_group_is_commutative H0.(ring_commutative_group_add))
+      |apply monoid_is_associative
+      |apply monoid_is_associative
+      |apply monoid_is_left_identity
+      |apply monoid_is_left_identity
+      |apply monoid_is_right_identity
+      |apply monoid_is_right_identity
+      |apply monoid_op_Proper; tauto
+      |apply monoid_op_Proper; tauto
+      |reflexivity|reflexivity
+      |symmetry; tauto|symmetry; tauto
+      |transitivity (fst y); tauto|transitivity (snd y); tauto
+      |apply ring_is_left_distributive
+      |apply ring_is_left_distributive
+      |apply ring_is_right_distributive
+      |apply ring_is_right_distributive
+      |apply ring_sub_definition
+      |apply ring_sub_definition
+      |apply ring_mul_Proper; tauto
+      |apply ring_mul_Proper; tauto
+      |apply ring_sub_Proper; tauto
+      |apply ring_sub_Proper; tauto].
+  Qed.
+End ProductRing.
 
 Section Homomorphism.
   Context {R EQ ZERO ONE OPP ADD SUB MUL} `{@ring R EQ ZERO ONE OPP ADD SUB MUL}.
@@ -122,6 +179,24 @@ Section Homomorphism.
     Monoid.is_homomorphism (phi:=phi) (OP:=MUL) (op:=mul) (EQ:=EQ) (eq:=eq).
   Proof using phi_homom. split; destruct phi_homom; assumption || exact _. Qed.
 End Homomorphism.
+
+Section HomorphismComposition.
+  Context {R EQ ZERO ONE OPP ADD SUB MUL} `{@ring R EQ ZERO ONE OPP ADD SUB MUL}.
+  Context {S eq zero one opp add sub mul} `{@ring S eq zero one opp add sub mul}.
+  Context {T Eq Zero One Opp Add Sub Mul} `{@ring T Eq Zero One Opp Add Sub Mul}.
+  Context {phi:R->S} {psi:S->T}.
+  Context `{@is_homomorphism R EQ ONE ADD MUL S eq one add mul phi}.
+  Context `{@is_homomorphism S eq one add mul T Eq One Add Mul psi}.
+
+  Lemma compose_homomorphism:
+    @is_homomorphism R EQ ONE ADD MUL T Eq One Add Mul (fun x => psi (phi x)).
+  Proof.
+    constructor.
+    - apply Group.compose_homomorphism.
+    - intros. rewrite H2.(homomorphism_mul), H3.(homomorphism_mul). reflexivity.
+    - rewrite H2.(homomorphism_one), H3.(homomorphism_one). reflexivity.
+  Qed.
+End HomorphismComposition.
 
 (* TODO: file a Coq bug for rewrite_strat -- it should accept ltac variables *)
 Ltac push_homomorphism phi :=
