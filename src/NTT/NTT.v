@@ -767,27 +767,340 @@ Section CyclotomicDecomposition.
 End CyclotomicDecomposition.
 
 Module NTTSanityCheck.
-  Local Definition bitrev (n: nat) (i: nat): nat :=
-    let fix aux k := match k with
-                     | O => if Nat.testbit i 0%nat then PeanoNat.Nat.setbit 0%nat (n - 1)%nat else 0%nat
-                     | S k' => if Nat.testbit i k then PeanoNat.Nat.setbit (aux k') (n - 1 - k)%nat else aux k'
-                     end in
-    aux (n - 1)%nat.
+  Section BitRev.
+    (*
+      In standards, the co-domain of the NTT is sometimes specified using
+      bit-reversal order, we show here that the order given by our [decompose]
+      is exactly the same (see theorem [decompose_is_bitrev] below).
 
-  Local Notation bitrev8 := (bitrev 8%nat). (* Dilithium *)
-  Local Notation bitrev7 := (bitrev 7%nat). (* Kyber *)
+      For instance, for MLKEM, the codomain is specified as
+      (X^2 - \zeta^{2 * bitrev_7(0) + 1}) ... (X^2 - \zeta^{2 * bitrev_7(127) + 1})
+    *)
 
-  (* Making sure the decomposition returns the same order expected by ML-DSA
+    Fixpoint setbit_f (n: nat) (f: nat -> bool): nat :=
+      match n with
+      | O => 0%nat
+      | S n' => if f n' then PeanoNat.Nat.setbit (setbit_f n' f) n' else (setbit_f n' f)
+      end.
+
+    Lemma setbit_f_spec:
+      forall n f i,
+        Nat.testbit (setbit_f n f) i = if Compare_dec.lt_dec i n then f i else false.
+    Proof.
+      induction n; intros; cbn.
+      - apply PeanoNat.Nat.bits_0.
+      - destruct (Compare_dec.lt_dec _ _) as [Hlt|Hnlt].
+        + assert (i = n \/ i < n)%nat as [->|Hlt_n] by Lia.lia; [|clear Hlt].
+          * destruct (f n); [apply PeanoNat.Nat.setbit_eq|].
+            rewrite IHn. destruct (Compare_dec.lt_dec _ _); [Lia.lia|reflexivity].
+          * destruct (f n); [rewrite PeanoNat.Nat.setbit_neq by Lia.lia|].
+            all: rewrite IHn; destruct (Compare_dec.lt_dec _ _); [reflexivity|Lia.lia].
+        + destruct (f n); [rewrite PeanoNat.Nat.setbit_neq by Lia.lia|].
+          all: rewrite IHn; destruct (Compare_dec.lt_dec _ _); [Lia.lia|reflexivity].
+    Qed.
+
+    Lemma setbit_f_bounds:
+      forall n f,
+        (setbit_f n f < Nat.pow 2 n)%nat.
+    Proof.
+      induction n; intros; cbn; [Lia.lia|].
+      specialize (IHn f). destruct (f n); [|Lia.lia].
+      rewrite NatUtil.setbit_high; Lia.lia.
+    Qed.
+
+    (* [n]-bits bit reversal of [x] *)
+    Definition bitrev (n: nat) (x: nat): nat :=
+      setbit_f n (fun i => Nat.testbit x ((n - 1) - i)%nat).
+
+    Lemma bitrev_0 (x: nat):
+      bitrev 0%nat x = 0%nat.
+    Proof. reflexivity. Qed.
+
+    Lemma bitrev_spec:
+      forall n x i,
+        Nat.testbit (bitrev n x) i = if Compare_dec.lt_dec i n then Nat.testbit x (n - 1 - i)%nat else false.
+    Proof. intros. unfold bitrev; rewrite setbit_f_spec. reflexivity. Qed.
+
+    Lemma bitrev_bounds:
+      forall n x,
+        (bitrev n x < Nat.pow 2 n)%nat.
+    Proof. intros; apply setbit_f_bounds. Qed.
+
+    Lemma decompose_S_rec_eq:
+      forall n r l,
+        (S r <= n)%nat ->
+        (Nat.modulo l (Nat.pow 2 (S r)) = 0)%nat ->
+        @decompose n (S r) l = List.flat_map (fun i => [Nat.div i 2; Nat.pow 2 n + Nat.div i 2]%nat) (@decompose n r l).
+    Proof.
+      induction r; intros l Hrn Hrl; [reflexivity|].
+      cbn [decompose decompose_body]. unfold decompose_body'.
+      pose proof (@r_leq_l_lhs n (S r) n l Hrn Hrn Hrl) as Hrl1.
+      rewrite IHr by Lia.lia.
+      pose proof (@r_leq_l_rhs n (S r) n l Hrn Hrn Hrl) as Hrl2.
+      rewrite IHr by Lia.lia.
+      rewrite flat_map_app. reflexivity.
+    Qed.
+
+    Lemma decompose_S_eq':
+      forall n r a,
+        (r <= n)%nat ->
+        @decompose (S n) r (2 * (a * Nat.pow 2 r)) = List.map (Nat.mul 2) (@decompose n r (a * Nat.pow 2 r)).
+    Proof.
+      induction r; intros a Hr_leq_n; [reflexivity|].
+      cbn [decompose decompose_body]. unfold decompose_body'.
+      rewrite (PeanoNat.Nat.mul_comm 2), PeanoNat.Nat.div_mul by congruence.
+      rewrite PeanoNat.Nat.pow_succ_r', PeanoNat.Nat.mul_assoc, (PeanoNat.Nat.mul_comm _ 2), <- (PeanoNat.Nat.mul_assoc 2).
+      rewrite (IHr a ltac:(Lia.lia)).
+      rewrite (PeanoNat.Nat.mul_comm 2), PeanoNat.Nat.div_mul by congruence.
+      rewrite map_app. f_equal.
+      assert (Nat.pow 2 (S n) + a * _ * 2 = 2 * ((Nat.pow 2 (n - r) + a) * Nat.pow 2 r))%nat as ->.
+      { rewrite PeanoNat.Nat.mul_add_distr_r, PeanoNat.Nat.mul_add_distr_l.
+        rewrite PeanoNat.Nat.pow_succ_r', <- PeanoNat.Nat.pow_add_r.
+        assert (n - r + r = n)%nat as -> by Lia.lia. Lia.lia. }
+      rewrite IHr by Lia.lia.
+      rewrite PeanoNat.Nat.mul_add_distr_r, <- PeanoNat.Nat.pow_add_r.
+      assert (n - r + r = n)%nat as -> by Lia.lia. reflexivity.
+    Qed.
+
+    Lemma decompose_S_eq_1:
+      forall n,
+        @decompose (S n) n (Nat.pow 2 (S n))= List.map (Nat.mul 2) (@decompose n n (Nat.pow 2 n)).
+    Proof.
+      intros. rewrite <- (PeanoNat.Nat.mul_1_l (Nat.pow 2 n)).
+      pose proof (decompose_S_eq' n n 1 ltac:(Lia.lia)) as <-.
+      rewrite PeanoNat.Nat.pow_succ_r'; f_equal; Lia.lia.
+    Qed.
+
+    Lemma decompose_is_bitrev:
+      forall n,
+        @decompose n n (Nat.pow 2 n) = List.map (fun i => (2 * bitrev n i + 1)%nat) (seq 0 (Nat.pow 2 n)).
+    Proof.
+      induction n; [reflexivity|].
+      rewrite (decompose_S_rec_eq (S n) n (Nat.pow 2 (S n)) ltac:(Lia.lia)) by (apply PeanoNat.Nat.Div0.mod_same).
+      rewrite decompose_S_eq_1, IHn, ListUtil.flat_map_map.
+      rewrite (flat_map_ext _ (fun x => [x; Nat.pow 2 (S n) + x]%nat)).
+      2:{ intros. rewrite (PeanoNat.Nat.mul_comm 2), PeanoNat.Nat.div_mul by congruence.
+          reflexivity. }
+      rewrite ListUtil.flat_map_map.
+      apply nth_error_ext. intros i.
+      rewrite nth_error_map, ListUtil.nth_error_seq, PeanoNat.Nat.add_0_l.
+      match goal with
+      | |- context [flat_map ?f ?l] => assert (length (flat_map f l) = Nat.pow 2 (S n)) as Hlen
+      end.
+      { rewrite (length_flat_map _ 2) by reflexivity.
+        rewrite length_seq, <- PeanoNat.Nat.pow_succ_r'. Lia.lia. }
+      destruct (Compare_dec.lt_dec _ _) as [Hlt|Hnlt].
+      2: rewrite ListUtil.nth_error_length_error by Lia.lia; reflexivity.
+      set (L := flat_map _ _).
+      assert (i < length L)%nat as HL by (unfold L; Lia.lia).
+      destruct (ListUtil.nth_error_length_exists_value i L HL) as (x & Hx).
+      rewrite Hx. cbn [option_map].
+      subst L. apply (ListUtil.flat_map_constant_nth_error 2%nat) in Hx; [|reflexivity].
+      destruct Hx as (y & Hy & Hx).
+      rewrite ListUtil.nth_error_seq in Hy.
+      destruct (Compare_dec.lt_dec _ _) as [_|]; [|congruence].
+      Local Opaque Nat.div.
+      rewrite PeanoNat.Nat.add_0_l in Hy; inversion Hy; subst y; clear Hy.
+      f_equal. pose proof (NatUtil.mod_bound_lt i 2 ltac:(Lia.lia)) as Hmodlt.
+      assert (Nat.modulo i 2 = 0 \/ Nat.modulo i 2 = 1)%nat as Hmodeq by Lia.lia.
+      Local Opaque Nat.mul.
+      destruct Hmodeq as [Hmodeq|Hmodeq]; rewrite Hmodeq in Hx; cbn in Hx; inversion Hx; subst x; clear Hx.
+      - f_equal. f_equal.
+        apply PeanoNat.Nat.bits_inj. intro k.
+        do 2 rewrite bitrev_spec.
+        rewrite PeanoNat.Nat.div2_bits.
+        destruct (Compare_dec.lt_dec _ _); destruct (Compare_dec.lt_dec _ _); try Lia.lia.
+        + f_equal; Lia.lia.
+        + assert (S n - 1 - k = 0)%nat as -> by Lia.lia.
+          apply PeanoNat.Nat.Lcm0.mod_divide in Hmodeq.
+          destruct Hmodeq; subst i. rewrite PeanoNat.Nat.mul_comm.
+          rewrite PeanoNat.Nat.testbit_even_0; reflexivity.
+      - rewrite PeanoNat.Nat.add_assoc, <- PeanoNat.Nat.mul_add_distr_l.
+        f_equal. f_equal.
+        transitivity (bitrev (S n) (2 * Nat.div i 2 + Nat.modulo i 2)); [|rewrite <- PeanoNat.Nat.div_mod_eq; reflexivity].
+        rewrite Hmodeq. apply PeanoNat.Nat.bits_inj. intro k.
+        rewrite bitrev_spec. destruct (Compare_dec.lt_dec _ _).
+        + assert (k = n \/ k < n)%nat as [->|?] by Lia.lia.
+          * assert (S n - 1 - n = 0)%nat as -> by Lia.lia.
+            rewrite PeanoNat.Nat.testbit_odd_0.
+            etransitivity; [|eapply PeanoNat.Nat.bit_log2].
+            1: f_equal.
+            2: pose proof (PeanoNat.Nat.pow_nonzero 2 n ltac:(congruence)); Lia.lia.
+            symmetry; apply PeanoNat.Nat.log2_unique; [Lia.lia|].
+            rewrite PeanoNat.Nat.pow_succ_r'.
+            pose proof (bitrev_bounds n (Nat.div i 2)). Lia.lia.
+          * rewrite PeanoNat.Nat.add_nocarry_lxor.
+            2:{ apply PeanoNat.Nat.bits_inj. intro m.
+                rewrite PeanoNat.Nat.bits_0.
+                rewrite PeanoNat.Nat.land_spec, bitrev_spec.
+                rewrite PeanoNat.Nat.pow2_bits_eqb.
+                pose proof (PeanoNat.Nat.eqb_spec n m) as Heqb; destruct Heqb; [subst m|].
+                - destruct (Compare_dec.lt_dec _ _); [Lia.lia|]; reflexivity.
+                - reflexivity. }
+            rewrite PeanoNat.Nat.lxor_spec.
+            rewrite PeanoNat.Nat.pow2_bits_false by Lia.lia.
+            rewrite Bool.xorb_false_l, bitrev_spec.
+            destruct (Compare_dec.lt_dec _ _) as [_|]; [|Lia.lia].
+            assert (S n - 1 - k = S (n - 1 - k))%nat as -> by Lia.lia.
+            rewrite PeanoNat.Nat.testbit_odd_succ'. reflexivity.
+        + apply PeanoNat.Nat.bits_above_log2.
+          assert (Nat.log2 _ = n)%nat as ->; [|Lia.lia].
+          apply PeanoNat.Nat.log2_unique; [Lia.lia|].
+          rewrite PeanoNat.Nat.pow_succ_r'.
+          pose proof (bitrev_bounds n (Nat.div i 2)). Lia.lia.
+    Qed.
+
+    Local Notation bitrev8 := (bitrev 8%nat). (* Dilithium *)
+    Local Notation bitrev7 := (bitrev 7%nat). (* Kyber *)
+
+    (* Making sure the decomposition returns the same order expected by ML-DSA
      aka Dilithium *)
-  (* See Section 7.5 of https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf *)
-  Local Lemma dilithium_ok:
-    (@decompose 8%nat 8%nat (Nat.pow 2 8)) = List.map (fun k => (2 * (bitrev8 k) + 1)%nat) (seq 0 256%nat).
-  Proof. reflexivity. Qed.
+    (* See Section 7.5 of https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf *)
+    Local Lemma dilithium_ok:
+      (@decompose 8%nat 8%nat (Nat.pow 2 8)) = List.map (fun k => (2 * (bitrev8 k) + 1)%nat) (seq 0 256%nat).
+    Proof. exact (decompose_is_bitrev 8%nat). Qed.
 
-  (* Making sure the decomposition returns the same order expected by ML-KEM
+    (* Making sure the decomposition returns the same order expected by ML-KEM
      aka Kyber *)
-  (* See Section 4.3 of https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf *)
-  Local Lemma kyber_ok:
-    (@decompose 7%nat 7%nat (Nat.pow 2 7)) = List.map (fun k => (2 * (bitrev7 k) + 1)%nat) (seq 0 128%nat).
-  Proof. reflexivity. Qed.
+    (* See Section 4.3 of https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf *)
+    Local Lemma kyber_ok:
+      (@decompose 7%nat 7%nat (Nat.pow 2 7)) = List.map (fun k => (2 * (bitrev7 k) + 1)%nat) (seq 0 128%nat).
+    Proof. exact (decompose_is_bitrev 7%nat). Qed.
+  End BitRev.
+
+  Section Mod.
+    (* We show here that our NTT is equivalent to the simpler specification
+          NTT(p) = (p mod P0(X), ..., p mod Pn(X))
+       where P0(X), ..., Pn(X) are given by [decomposition].
+    *)
+
+    Local Coercion N.of_nat: nat >-> N.
+    Context {q: positive} {prime_q: prime q}.
+    Local Notation F := (F q). (* This is to have F.pow available, there is no Fpow defined for a general field *)
+    Local Open Scope F_scope.
+    Context {field: @Hierarchy.field F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div}
+      {char_ge_3: @Ring.char_ge F eq F.zero F.one F.opp F.add F.sub F.mul (BinNat.N.succ_pos (BinNat.N.two))}.
+    Context {P}{poly_ops: @Polynomial.polynomial_ops F P}.
+    Context {poly_defs: @Polynomial.polynomial_defs F eq F.zero F.one F.opp F.add F.sub F.mul P _}.
+    Context {zeta: F} {m: nat} {Hm: zeta ^ (N.pow 2 m) = F.opp 1}.
+
+    (* Too many instances *)
+    Remove Hints F.commutative_ring_modulo: typeclass_instances.
+
+    Local Notation Peq := (@Polynomial.Peq F eq P _).
+    Local Notation Pmod := (@Polynomial.Pmod F F.zero P _ F.div).
+    Local Notation Pmul := (@Polynomial.Pmul _ _ poly_ops).
+    Local Notation posicyclic := (@PolynomialCRT.posicyclic F F.opp P _).
+    Local Notation decompose := (@decompose m).
+    Local Notation decomposition := (@decomposition q P poly_ops zeta m).
+    Local Notation ntt' := (@ntt' q field P poly_ops poly_defs zeta m Hm).
+
+    Lemma decomposition_is_decomposition:
+      forall r k l,
+        (r <= k)%nat ->
+        (r <= m)%nat ->
+        (Nat.modulo l (Nat.pow 2 r) = 0)%nat ->
+        Peq (List.fold_right Pmul Pone (decomposition r k l)) (posicyclic (Nat.pow 2 k) (F.pow zeta l)).
+    Proof.
+      assert (forall l1 l2, Peq (List.fold_right Pmul Pone (l1 ++ l2)) (Pmul (List.fold_right Pmul Pone l1) (List.fold_right Pmul Pone l2))) as Hassoc.
+      { induction l1; intros; cbn.
+        - symmetry; apply Hierarchy.left_identity.
+        - rewrite IHl1. apply Hierarchy.associative. }
+      induction r; intros k l r_leq_k r_leq_m r_leq_l.
+      - cbn. rewrite PeanoNat.Nat.sub_0_r.
+        apply Hierarchy.right_identity.
+      - unfold decomposition.
+        cbn [decompose decompose_body]. unfold decompose_body'.
+        rewrite map_app, Hassoc.
+        unfold decomposition in IHr.
+        assert (k - S r = (k - 1) - r)%nat as -> by Lia.lia.
+        pose proof (@r_leq_l_lhs m r k l r_leq_k r_leq_m r_leq_l) as r_leq_l_lhs.
+        pose proof (@r_leq_l_rhs m r k l r_leq_k r_leq_m r_leq_l) as r_leq_l_rhs.
+        rewrite (IHr (k - 1)%nat _ ltac:(Lia.lia) ltac:(Lia.lia) r_leq_l_lhs).
+        rewrite (IHr (k - 1)%nat _ ltac:(Lia.lia) ltac:(Lia.lia) r_leq_l_rhs).
+        rewrite Nnat.Nat2N.inj_add, Nnat.Nat2N.inj_pow.
+        rewrite <- (neg_zeta_power_eq (Hm:=Hm)).
+        rewrite posicyclic_opp, <- posicyclic_decomposition.
+        rewrite <- F.pow_add_r, <- PeanoNat.Nat.pow_succ_r', <- Nnat.Nat2N.inj_add.
+        assert (S (k - 1) = k)%nat as -> by Lia.lia.
+        apply PeanoNat.Nat.Lcm0.mod_divide in r_leq_l.
+        destruct r_leq_l as (x & Hx).
+        rewrite PeanoNat.Nat.pow_succ_r' in Hx.
+        assert (Nat.div l 2 + Nat.div l 2 = l)%nat as ->.
+        { rewrite Hx, (PeanoNat.Nat.mul_comm 2), PeanoNat.Nat.mul_assoc.
+          rewrite PeanoNat.Nat.div_mul by congruence. Lia.lia. }
+        reflexivity.
+    Qed.
+
+    Lemma decomposition_divides:
+      forall r k l,
+        (r <= k)%nat ->
+        (r <= m)%nat ->
+        (Nat.modulo l (Nat.pow 2 r) = 0)%nat ->
+        forall p, In p (decomposition r k l) ->
+             exists q, Peq (posicyclic (Nat.pow 2 k) (F.pow zeta l)) (Pmul p q).
+    Proof.
+      assert (forall l (p: P), In p l -> exists q, Peq (List.fold_right Pmul Pone l) (Pmul p q)).
+      { induction l; intros p Hp; [inversion Hp|].
+        apply in_inv in Hp. destruct Hp as [->|Hp].
+        - cbn. eexists; reflexivity.
+        - cbn. apply IHl in Hp. destruct Hp as (p' & Hp').
+          exists (Pmul a p'). rewrite Hp'.
+          rewrite Hierarchy.associative, (Hierarchy.commutative a).
+          rewrite <- Hierarchy.associative. reflexivity. }
+      intros r k l HA HB HC p Hp.
+      apply H in Hp. destruct Hp as (p' & Hp').
+      rewrite decomposition_is_decomposition in Hp'; auto.
+      exists p'. assumption.
+    Qed.
+
+    Lemma ntt_is_modulo:
+      forall r k l (r_leq_k: (r <= k)%nat) (r_leq_m: (r <= m)%nat)
+        (r_leq_l: Nat.modulo l (Nat.pow 2 r) = 0%nat) p,
+        List.Forall2 Peq (proj1_sig (ntt' r k l r_leq_k r_leq_m r_leq_l p)) (List.map (Pmod (proj1_sig p)) (decomposition r k l)).
+    Proof.
+      induction r; intros.
+      - cbn. rewrite PeanoNat.Nat.sub_0_r.
+        repeat constructor. apply (proj2_sig p).
+      - unfold decomposition. cbn [decompose decompose_body].
+        unfold decompose_body'. rewrite map_map.
+        rewrite map_app. cbn [ntt' ntt_body].
+        unfold ntt_body'. unfold Pquotl_convert. cbn [proj1_sig].
+        unfold Pquotl_app. cbn [proj1_sig].
+        destruct (ntt2 k l p) as (p1 & p2) eqn:Hntt2.
+        unfold Ring.apply_unop_pair. cbn [fst snd].
+        assert (k - S r = k - 1 - r)%nat as -> by Lia.lia.
+        unfold ntt2, phi2, of_P, to_P in Hntt2.
+        Local Opaque Nat.div.
+          apply Forall2_app.
+        + match goal with
+          | |- context [ntt' r ?k ?l ?r_leq_k ?r_leq_m ?r_leq_l ?p] =>
+              pose proof (IHr k l r_leq_k r_leq_m r_leq_l p) as ->
+          end.
+          unfold decomposition. rewrite map_map.
+          apply Forall.Forall2_map_map_iff.
+          inversion Hntt2; subst p1; clear Hntt2.
+          cbn [proj1_sig]. apply (Forall2_impl_strong eq); [|reflexivity].
+          intros x y <- Hx _. apply (in_map (fun n => posicyclic (Nat.pow 2 (k - 1 - r)%nat) (F.pow zeta (N.of_nat n)))) in Hx.
+          pose proof (@r_leq_l_lhs m r k l r_leq_k r_leq_m r_leq_l) as r_leq_l'.
+          apply decomposition_divides in Hx; try Lia.lia.
+          destruct Hx as (p' & Hpp).
+          rewrite (@peq_mod_proper _ _ _ _ _ _ _ _ _ P poly_ops poly_defs F.inv F.div field (proj1_sig p) (proj1_sig p) ltac:(reflexivity) _ _ Hpp).
+          apply Pmod_mul_mod_l.
+        + match goal with
+          | |- context [ntt' r ?k ?l ?r_leq_k ?r_leq_m ?r_leq_l ?p] =>
+              pose proof (IHr k l r_leq_k r_leq_m r_leq_l p) as ->
+          end.
+          unfold decomposition. rewrite map_map.
+          apply Forall.Forall2_map_map_iff.
+          inversion Hntt2; subst p2; clear Hntt2.
+          cbn [proj1_sig]. apply (Forall2_impl_strong eq); [|reflexivity].
+          intros x y <- Hx _. apply (in_map (fun n => posicyclic (Nat.pow 2 (k - 1 - r)%nat) (F.pow zeta (N.of_nat n)))) in Hx.
+          pose proof (@r_leq_l_rhs m r k l r_leq_k r_leq_m r_leq_l) as r_leq_l'.
+          apply decomposition_divides in Hx; try Lia.lia.
+          destruct Hx as (p' & Hpp).
+          rewrite (@peq_mod_proper _ _ _ _ _ _ _ _ _ P poly_ops poly_defs F.inv F.div field (proj1_sig p) (proj1_sig p) ltac:(reflexivity) _ _ Hpp).
+          apply Pmod_mul_mod_l.
+    Qed.
+  End Mod.
 End NTTSanityCheck.
