@@ -61,7 +61,7 @@ Section Bedrock.
     (* Assume we have a partial word evaluation function, returns none if input is invalid *)
     Context {feval: word -> option F}.
     Local Coercion F.to_Z: F >-> Z.
-    Local Definition word_of_F (x: F): word := word.of_Z (F.to_Z x).
+    Context {word_of_F : F -> word}.
 
     (* Converting a field element to a word, and back is correct *)
     Hypothesis feval_ok: forall x, feval (word_of_F x) = Some x.
@@ -74,7 +74,6 @@ Section Bedrock.
 
     (* This is only needed because we need 2^(width/8) * 2^m ≤ 2^width to use InlineTables... Not a problem in practice *)
     Hypothesis mp3_le_with: (m + 3 <= Z.to_nat width)%nat.
-
 
     Definition spec_of_binop {name: String.string} (model: F -> F -> F): spec_of name :=
       fnspec! name (x y: word) / (a b: F) ~> (res: word),
@@ -170,7 +169,7 @@ Section Bedrock.
           j = coq:(0);
           while (j < coq:(Z.of_nat (Nat.pow 2 n))) {
               x = load(coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal (Z.of_nat (@Memory.bytes_per width access_size.word)))));
-              unpack! x = $mul($(F.to_Z c), x);
+              unpack! x = $mul($(word.unsigned (word_of_F c)), x);
               store(coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal (Z.of_nat (@Memory.bytes_per width access_size.word)))), x);
               j = j + coq:(1)
             }
@@ -190,7 +189,7 @@ Section Bedrock.
             spec_of_mul functions ->
             spec_of_sub functions -> spec_of_add functions -> spec_of_ntt functions).
     Proof.
-      Local Opaque Memory.bytes_per to_byte_table Z.pow Z.of_nat List.map Z.div Z.sub Z.add Nat.sub Nat.min F.F word_of_F.
+      Local Opaque Memory.bytes_per to_byte_table Z.pow Z.of_nat List.map Z.div Z.sub Z.add Nat.sub Nat.min F.F word.unsigned.
       assert (len_chunk1: forall A (l: list A), length (List.chunk 1 l) = length l).
       { intros; rewrite List.length_chunk by congruence.
         rewrite <- (PeanoNat.Nat.mul_1_r (length l)), List.Nat.div_up_exact; Lia.lia. }
@@ -1054,7 +1053,7 @@ Section Bedrock.
         { eexists; split; [apply map.get_put_same|repeat straightline]. }
         straightline_call.
         { split; [|apply (proj1 (@Forall.Forall2_forall_iff'' _ _ (fun x y => feval y = Some x) _ p4 0%F (word_of_F 0%F)) (conj HF4 (feval_ok _)))].
-          assert (word.of_Z _ = word_of_F c) as -> by reflexivity.
+          rewrite word.of_Z_unsigned.
           apply feval_ok. }
         repeat straightline.
         eexists; split; repeat straightline.
