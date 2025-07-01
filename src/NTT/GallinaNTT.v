@@ -254,8 +254,55 @@ Section Zetas.
       symmetry; apply (PeanoNat.Nat.mod_unique _ 2 k 1); Lia.lia.
   Qed.
 
-  Definition zetas (l i: nat) := List.map (fun k => F.pow zeta (N.of_nat k)) (zeta_powers l i).
+  Lemma In_decompose:
+    forall i x, In x (@decompose m i (Nat.pow 2 m)) ->
+             (x <= Nat.pow 2 (S m))%nat.
+  Proof.
+    induction i; intros p Hin.
+    - cbn in Hin. destruct Hin as [<-|Hin]; [|elim Hin].
+      rewrite PeanoNat.Nat.pow_succ_r'; Lia.lia.
+    - rewrite decompose_S_eq in Hin.
+      apply In_nth_error in Hin. destruct Hin as [k Hin].
+      cbn -[Nat.div] in Hin. eapply ListUtil.flat_map_constant_nth_error in Hin; [|simpl; reflexivity].
+      destruct Hin as (n1 & (Hn1 & Hn2)).
+      pose proof (IHi n1 ltac:(eapply nth_error_In; eauto)) as A.
+      assert (Nat.modulo k 2 = 0 \/ Nat.modulo k 2 = 1)%nat as X by (generalize (NatUtil.mod_bound_lt k 2 ltac:(Lia.lia)); Lia.lia).
+      transitivity (Nat.max (Nat.div n1 2) (Nat.pow 2 m + Nat.div n1 2)).
+      + destruct X as [X|X]; rewrite X in Hn2; cbn -[Nat.div] in Hn2; inversion Hn2; subst p; clear Hn2; [apply PeanoNat.Nat.le_max_l|apply PeanoNat.Nat.le_max_r].
+      + rewrite PeanoNat.Nat.max_r by Lia.lia.
+        apply (PeanoNat.Nat.Div0.div_le_mono _ _ 2) in A.
+        rewrite PeanoNat.Nat.pow_succ_r' in *.
+        rewrite PeanoNat.Nat.mul_comm, PeanoNat.Nat.div_mul in A by Lia.lia.
+        Lia.lia.
+  Qed.
 
+  Lemma In_zeta_powers:
+    forall i, (i <= m)%nat ->
+         forall x, In x (zeta_powers (Nat.pow 2 m) i) ->
+              (x <= (Nat.pow 2 m))%nat.
+  Proof.
+    induction i; intros Hi x Hx.
+    - cbn in Hx. destruct Hx as [<- | Hx]; [reflexivity|elim Hx].
+    - cbn [zeta_powers] in Hx. apply in_app_or in Hx.
+      destruct Hx as [Hx|Hx].
+      + apply IHi; auto. Lia.lia.
+      + apply in_map_iff in Hx. destruct Hx as [y [Hy Hy']].
+        apply in_seq in Hy'. rewrite PeanoNat.Nat.add_0_l in Hy'.
+        simpl in Hy. unfold decompose_body' in Hy.
+        destruct (ListUtil.nth_error_length_exists_value y (@decompose m i (Nat.pow 2 m)) ltac:(rewrite length_decompose; Lia.lia)) as [v Hv].
+        generalize (nth_error_In _ _ Hv). intro Hin.
+        pose proof (In_decompose _ _ Hin) as Hin'.
+        apply decompose_mod in Hin; [|Lia.lia].
+        apply decompose_S_nth in Hv.
+        destruct Hv as [Hv1' Hv2'].
+        rewrite (ListUtil.nth_error_value_eq_nth_default _ _ _ Hv1') in Hy.
+        subst x. assert (Nat.pow 2 m = Nat.div (Nat.pow 2 (S m)) 2) as ->.
+        { rewrite PeanoNat.Nat.pow_succ_r by Lia.lia.
+          rewrite PeanoNat.Nat.mul_comm, PeanoNat.Nat.div_mul by Lia.lia; reflexivity. }
+        apply PeanoNat.Nat.Div0.div_le_mono. Lia.lia.
+  Qed.
+
+  Definition zetas (l i: nat) := List.map (fun k => F.pow zeta (N.of_nat k)) (zeta_powers l i).
 End Zetas.
 
 Section Gallina.

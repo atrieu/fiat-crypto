@@ -142,7 +142,7 @@ Section __.
 
   Section VerySmall.
     Hypothesis k_very_small: 3 * k + 1 < width.
-    Local Definition word_of_F (x: F modulus_pos): word := word.of_Z (F.to_Z x).
+    Definition word_of_F (x: F modulus_pos): word := word.of_Z (F.to_Z x).
 
     Lemma modulus_small:
       2 * modulus < modulus * modulus < 2 ^ width.

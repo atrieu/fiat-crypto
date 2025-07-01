@@ -1,7 +1,7 @@
 Require Import Coq.ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.NTT.BedrockNTT.
-Require Import Crypto.NTT.BedrockBarrettReduction.
+Require Import Crypto.NTT.BedrockMontgomeryReduction.
 Require Import bedrock2.BasicC64Semantics.
 Require Import Rupicola.Lib.Core.
 Require Import bedrock2.ToCString.
@@ -50,8 +50,8 @@ Section MLKEM.
   Local Notation add := "mlkem_felem_add".
   Local Notation sub := "mlkem_felem_sub".
   Local Notation mul := "mlkem_felem_mul".
-  Local Notation reduce := "mlkem_barrett_reduce".
-  Local Notation reduce_small := "mlkem_barrett_reduce_small".
+  Local Notation from_montgomery := "mlkem_from_montgomery".
+  Local Notation to_montgomery := "mlkem_to_montgomery".
 
   Local Notation mlkem_make_zetas := (@make_zetas q zeta).
 
@@ -143,85 +143,71 @@ Section MLKEM.
   Definition mlkem_ntt := @br2_ntt 64 (Naive.word _) q n m mlkem_zetas word_of_F add sub mul.
   Definition mlkem_inverse_ntt := @br2_ntt_inverse 64 (Naive.word _) q n m mlkem_c mlkem_zetas word_of_F add sub mul.
 
-  Definition mlkem_barrett_reduce_small := @reduce_small_br2fn q.
-  Definition mlkem_barrett_reduce := @reduce_br2fn q.
-  Definition mlkem_felem_add := @add_br2fn reduce_small.
-  Definition mlkem_felem_sub := @sub_br2fn q reduce_small.
-  Definition mlkem_felem_mul := @mul_br2fn reduce.
+  Definition mlkem_from_montgomery := @from_montgomery_br2fn 64 (Naive.word _) q.
+  Definition mlkem_to_montgomery := @to_montgomery_br2fn1 64 (Naive.word _) q.
+  Definition mlkem_felem_add := @add_br2fn 64 (Naive.word _) q.
+  Definition mlkem_felem_sub := @sub_br2fn 64 (Naive.word _) q.
+  Definition mlkem_felem_mul := @mul_br2fn1 64 (Naive.word _) q.
 
   Definition mlkem_funcs :=
-    [ ("mlkem_ntt", mlkem_ntt)
-    ; ("mlkem_inverse_ntt", mlkem_inverse_ntt)
-    ; (reduce_small, mlkem_barrett_reduce_small)
-    ; (reduce, mlkem_barrett_reduce)
-    ; (add, mlkem_felem_add)
+    [ (add, mlkem_felem_add)
     ; (sub, mlkem_felem_sub)
     ; (mul, mlkem_felem_mul)
+    ; (from_montgomery, mlkem_from_montgomery)
+    ; (to_montgomery, mlkem_to_montgomery)
+    ; ("mlkem_ntt", mlkem_ntt)
+    ; ("mlkem_invntt", mlkem_inverse_ntt)
     ].
 
-  Lemma mlkem_reduce_small_ok:
-    @spec_of_reduce_small _ _ _ _ _ _ q reduce_small (map.of_list mlkem_funcs).
-  Proof.
-    assert (3 <= Z.pos q) as Hle by Lia.lia.
-    apply (reduce_small_br2fn_ok (modulus_not_2:=Hle)); reflexivity.
-  Qed.
+  Lemma q_small: 3 <= Zpos q < 2 ^ 64.
+  Proof. cbn. Lia.lia. Qed.
 
   Lemma mlkem_felem_add_ok:
-    @spec_of_add _ _ _ _ _ _ _ q add (map.of_list mlkem_funcs).
+    @spec_of_add _ _ _ _ _ _ _ _ q q_small mlkem_prime_q add (map.of_list mlkem_funcs).
   Proof.
-    apply (add_br2fn_ok (modulus_pos:=q) (modulus_not_2:=ltac:(Lia.lia)) (reduce_small_name:=reduce_small)).
-    - compute. reflexivity.
+    apply (add_br2fn_ok (modulus_pos:=q) (modulus_small:=q_small) (modulus_prime:=mlkem_prime_q)).
+    - cbn. Lia.lia.
     - reflexivity.
-    - apply mlkem_reduce_small_ok.
   Qed.
 
   Lemma mlkem_felem_sub_ok:
-    @spec_of_sub _ _ _ _ _ _ _ q sub (map.of_list mlkem_funcs).
+    @spec_of_sub _ _ _ _ _ _ _ _ q q_small mlkem_prime_q sub (map.of_list mlkem_funcs).
   Proof.
-    apply (sub_br2fn_ok (modulus_pos:=q) (modulus_not_2:=ltac:(Lia.lia)) (reduce_small_name:=reduce_small)).
-    - compute. reflexivity.
+    apply (sub_br2fn_ok (modulus_pos:=q) (modulus_small:=q_small) (modulus_prime:=mlkem_prime_q)).
+    - cbn. Lia.lia.
     - reflexivity.
-    - apply mlkem_reduce_small_ok.
-  Qed.
-
-  Lemma mlkem_reduce_ok:
-    @spec_of_reduce _ _ _ _ _ _ q reduce (map.of_list mlkem_funcs).
-  Proof.
-    apply (reduce_br2fn_ok (modulus_pos:=q) (modulus_prime:=mlkem_prime_q) (modulus_not_2:=ltac:(Lia.lia))); auto.
-    - cbv. reflexivity.
   Qed.
 
   Lemma mlkem_felem_mul_ok:
-    @spec_of_mul _ _ _ _ _ _ _ q mul (map.of_list mlkem_funcs).
+    @spec_of_mul _ _ _ _ _ _ _ _ q q_small mlkem_prime_q mul (map.of_list mlkem_funcs).
   Proof.
-    apply (mul_br2fn_ok (modulus_pos:=q) (modulus_prime:=mlkem_prime_q) (modulus_not_2:=ltac:(Lia.lia)) (reduce_name:=reduce)); try reflexivity.
-    apply mlkem_reduce_ok.
+    apply (mul_br2fn_ok1 (modulus_pos:=q) (modulus_small:=q_small) (modulus_prime:=mlkem_prime_q)).
+    - cbn. Lia.lia.
+    - reflexivity.
   Qed.
 
   Lemma mlkem_ntt_ok:
-    @spec_of_ntt _ _ _ _ _ _ "mlkem_ntt" q n m mlkem_zetas feval (map.of_list mlkem_funcs).
+    @spec_of_ntt _ _ _ _ _ _ "mlkem_ntt" q n m mlkem_zetas (feval (modulus_small:=q_small) (modulus_prime:=mlkem_prime_q)) (map.of_list mlkem_funcs).
   Proof.
     eapply (br2_ntt_ok mlkem_c mlkem_zetas mlkem_c_correct).
     2-4: cbn; Lia.lia.
-    - eapply feval_ok. compute. reflexivity.
+    - eapply feval_ok.
     - reflexivity.
     - apply mlkem_felem_mul_ok.
     - apply mlkem_felem_sub_ok.
     - apply mlkem_felem_add_ok.
-      Unshelve. Lia.lia.
   Qed.
 
   Lemma mlkem_inverse_ntt_ok:
-    @spec_of_ntt_inverse _ _ _ _ _ _ "mlkem_inverse_ntt" q n m mlkem_zetas feval (map.of_list mlkem_funcs).
+    @spec_of_ntt_inverse _ _ _ _ _ _ "mlkem_invntt" q n m mlkem_zetas (feval (modulus_small:=q_small) (modulus_prime:=mlkem_prime_q)) (map.of_list mlkem_funcs).
   Proof.
     eapply (br2_ntt_inverse_ok mlkem_c mlkem_zetas mlkem_c_correct).
     2-4: cbn; Lia.lia.
-    - eapply feval_ok. compute. reflexivity.
+    - eapply feval_ok.
     - reflexivity.
     - apply mlkem_felem_mul_ok.
     - apply mlkem_felem_sub_ok.
     - apply mlkem_felem_add_ok.
-      Unshelve. Lia.lia.
   Qed.
 
   Eval compute in ToCString.c_module mlkem_funcs.
