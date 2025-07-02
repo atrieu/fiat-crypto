@@ -50,7 +50,7 @@ Section Bedrock.
   Context {q: positive}.
   Local Notation F := (F q).
   Context {n m: nat}.
-  Context (zeta: F) (c:F) (zetas: list F).
+  Context (zeta: F) {c:F} (zetas: list F).
 
   Hypothesis c_ok: id c = F.inv (F.pow (1 + 1)%F (N.of_nat (Nat.min m n))).
 
@@ -75,6 +75,8 @@ Section Bedrock.
           list_in_bounds loose_bounds X)
       (eval_transformation : list Z -> list Z).
 
+    Hypothesis loose_bounds_eq_tight_bounds: id loose_bounds = tight_bounds.
+
     Local Instance field_representation: FieldRepresentation :=
       frep n_words n_bytes weight bounds list_in_bounds loose_bounds tight_bounds byte_bounds eval_transformation.
 
@@ -82,9 +84,9 @@ Section Bedrock.
       frep_ok n_words n_bytes weight bounds list_in_bounds loose_bounds tight_bounds byte_bounds relax_bounds eval_transformation.
 
     Instance spec_of_add: spec_of add :=
-      spec_of_BinOp bin_carry_add.
+      spec_of_BinOp bin_add.
     Instance spec_of_sub: spec_of sub :=
-      spec_of_BinOp bin_carry_sub.
+      spec_of_BinOp bin_sub.
     Instance spec_of_mul: spec_of mul :=
       spec_of_BinOp bin_mul.
     (* Specialized multiplication by c = F.inv (F.pow (1 + 1)%F (N.of_nat (Nat.min m n))) *)
@@ -621,7 +623,9 @@ Section Bedrock.
                 assert (1%Z = Z.of_nat 1) as -> by reflexivity.
                 rewrite <- Nat2Z.inj_add. do 3 f_equal.
                 clear -Hfnz3 Hfuel3 idx_ok. Lia.lia. }
-            2:{ apply Forall_set_nth; [|assumption].
+            2:{ assert (bounded_by tight_bounds x4) by (simpl in *; rewrite <- loose_bounds_eq_tight_bounds; assumption).
+                apply Forall_set_nth; [|assumption].
+                assert (bounded_by tight_bounds x3) by (simpl in *; rewrite <- loose_bounds_eq_tight_bounds; assumption).
                 apply Forall_set_nth; assumption. }
             2:{ exists x0. seplog.
                 rewrite (Bignums_set_nth felem_size_in_words (Nat.pow 2 n) p_ptr (set_nth (j + len4)%nat x3 p3) j x4 ltac:(rewrite length_set_nth, Xlen; clear -idx_ok; Lia.lia) ltac:(clear -idx_ok; Lia.lia) ltac:(rewrite length_set_nth; apply ZA)).
@@ -631,7 +635,7 @@ Section Bedrock.
             assert (fold_left _ (seq _ _) _ = (polynomial_decompose_loop' (2 ^ (n - (Nat.min m n - (fuel - 1))) - fuel3)%nat ((2 ^ (Nat.min m n - fuel) - fuel2) * 2 ^ (n - (Nat.min m n - fuel))) (2 ^ (n - (Nat.min m n - (fuel - 1))))%nat (nth_default 0%F zetas (2 ^ (Nat.min m n - fuel) - 1 + 2 ^ (Nat.min m n - fuel) - fuel2 + 1)) px2))%nat as -> by reflexivity.
             cbn [fold_left]. fold j len4.
             apply Forall2_set_nth; auto.
-            2:{ rewrite H19. cbv [bin_model bin_carry_add].
+            2:{ rewrite H19. cbv [bin_model bin_add].
                 rewrite H11. cbv [bin_model bin_mul].
                 rewrite (proj1 (Forall2_forall_iff _ _ _ 0%F nil (Forall2_length HF3)) HF3 j ltac:(rewrite (Forall2_length HF3); unfold felem; rewrite Xlen; clear -idx_ok; Lia.lia)).
                 rewrite (proj1 (Forall2_forall_iff _ _ _ 0%F nil (Forall2_length H3)) H3 (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2))%nat ltac:(rewrite (Forall2_length H3); unfold felem; rewrite Ylen; clear -z_ok; Lia.lia)).
@@ -639,7 +643,7 @@ Section Bedrock.
                 fold j len4. do 3 f_equal.
                 clear -Hfnz Hfnz2 Hfnz3 Hfuel Hfuel2 Hfuel3; Lia.lia. }
             apply Forall2_set_nth; auto.
-            rewrite H16. cbv [bin_model bin_carry_sub].
+            rewrite H16. cbv [bin_model bin_sub].
             rewrite H11. cbv [bin_model bin_mul].
             rewrite (proj1 (Forall2_forall_iff _ _ _ 0%F nil (Forall2_length HF3)) HF3 j ltac:(rewrite (Forall2_length HF3); unfold felem; rewrite Xlen; clear -idx_ok; Lia.lia)).
                 rewrite (proj1 (Forall2_forall_iff _ _ _ 0%F nil (Forall2_length H3)) H3 (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2))%nat ltac:(rewrite (Forall2_length H3); unfold felem; rewrite Ylen; clear -z_ok; Lia.lia)).
