@@ -47,41 +47,26 @@ Section Bedrock.
   Context {ext_spec_ok : Semantics.ext_spec.ok ext_spec}.
 
   Context {ntt ntt_inverse: String.string}.
-  Context {q: positive}.
-  Local Notation F := (F q).
-  Context {n m: nat}.
-  Context (zeta: F) {c:F} (zetas: list F).
 
-  Hypothesis c_ok: id c = F.inv (F.pow (1 + 1)%F (N.of_nat (Nat.min m n))).
+  Context {field_parameters: FieldParameters}.
+
+  Context {field_representation: FieldRepresentation}.
+  Context {field_reprensetation_ok: FieldRepresentation_ok}.
+  Context {loose_bounds_eq_tight_bounds: id loose_bounds = tight_bounds}.
+
+  Local Notation q := M_pos.
+  Local Notation F := (F q).
+
+  Context {n m: nat}.
+  Context (zeta: F) (zetas: list F).
+
+  (* Context {c:F} {c_ok: id c = F.inv (F.pow (1 + 1)%F (N.of_nat (Nat.min m n)))}. *)
 
   Notation NTT_gallina := (@ntt_loop q zetas (Nat.min m n) n).
   Notation NTT_inverse_gallina := (@inverse_ntt_loop q zetas (Nat.min m n) n).
 
   Section FitsInWords.
     (* When a field element needs [felem_size_in_words] machine words to fit *)
-    Context {mul add carry_add sub carry_sub opp square mul_inv_pow2 inv from_bytes to_bytes select_znz felem_copy from_word: String.string}.
-
-    Local Instance field_parameters: FieldParameters :=
-      Build_FieldParameters
-        q c mul add add sub sub opp square mul_inv_pow2 inv from_bytes to_bytes select_znz felem_copy from_word.
-
-    Context (n_words n_bytes : nat) (weight : nat -> Z)
-      (bounds : Type)
-      (list_in_bounds : bounds -> list Z -> Prop)
-      (loose_bounds tight_bounds byte_bounds : bounds)
-      (relax_bounds :
-        forall X : list Z,
-          list_in_bounds tight_bounds X ->
-          list_in_bounds loose_bounds X)
-      (eval_transformation : list Z -> list Z).
-
-    Hypothesis loose_bounds_eq_tight_bounds: id loose_bounds = tight_bounds.
-
-    Local Instance field_representation: FieldRepresentation :=
-      frep n_words n_bytes weight bounds list_in_bounds loose_bounds tight_bounds byte_bounds eval_transformation.
-
-    Local Instance field_representation_ok: FieldRepresentation_ok :=
-      frep_ok n_words n_bytes weight bounds list_in_bounds loose_bounds tight_bounds byte_bounds relax_bounds eval_transformation.
 
     Instance spec_of_add: spec_of add :=
       spec_of_BinOp bin_add.
@@ -89,19 +74,16 @@ Section Bedrock.
       spec_of_BinOp bin_sub.
     Instance spec_of_mul: spec_of mul :=
       spec_of_BinOp bin_mul.
-    (* Specialized multiplication by c = F.inv (F.pow (1 + 1)%F (N.of_nat (Nat.min m n))) *)
-    Instance spec_of_mul_inv_pow2: spec_of mul_inv_pow2 :=
-      spec_of_UnOp un_scmula24.
-    Instance spec_of_felem_copy: spec_of felem_copy :=
-      Field.spec_of_felem_copy (field_representation:=field_representation).
 
-    Hypothesis n_words_pos: (0 < n_words)%nat.
+    (* Instance spec_of_mul_inv_pow2: spec_of mul_inv_pow2 := *)
+    (*   spec_of_UnOp un_scmula24. *)
+    (* Instance spec_of_felem_copy: spec_of felem_copy := *)
+    (*   Field.spec_of_felem_copy (field_representation:=field_representation). *)
+
+    Hypothesis n_words_pos: (0 < felem_size_in_words)%nat.
 
     (* These are to ensure that content of the arrays are addresssable *)
     Hypothesis n_lt_width: (Z.of_nat (2 ^ n) * felem_size_in_bytes < 2 ^ width)%Z.
-    Hypothesis m_lt_width: (Z.of_nat (2 ^ m) * felem_size_in_bytes < 2 ^ width)%Z.
-
-    Hypothesis zetas_length_ok: length zetas = Nat.pow 2 m.
 
     Instance spec_of_ntt: spec_of ntt :=
       fnspec! ntt (z_ptr p_ptr: word) / (p: list F) (z': list felem) R,
@@ -112,7 +94,7 @@ Section Bedrock.
               Forall (bounded_by tight_bounds) p' /\
               Forall (bounded_by tight_bounds) z' /\
               mem =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p')
-                     * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z')
+                     * (Bignums felem_size_in_words (Nat.pow 2 (Nat.min m n)) z_ptr z')
                      * R;
           ensures tr' mem' :=
             tr' = tr /\
@@ -122,26 +104,26 @@ Section Bedrock.
                 Forall (bounded_by tight_bounds) p' /\
                 Forall (bounded_by tight_bounds) z' /\
                 mem' =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p')
-                        * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z')
+                        * (Bignums felem_size_in_words (Nat.pow 2 (Nat.min m n)) z_ptr z')
                         * R }.
 
-    Instance spec_of_ntt_inverse: spec_of ntt_inverse :=
-      fnspec! ntt_inverse (z_ptr p_ptr: word) / (p: list F) (z': list felem) R,
-        { requires tr mem :=
-            exists p',
-              Forall2 (fun x y => feval y = x) p p' /\
-              Forall2 (fun x y => feval y = x) zetas z' /\
-              mem =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p')
-                     * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z')
-                     * R;
-          ensures tr' mem' :=
-            tr' = tr /\
-              exists p',
-                Forall2 (fun x y => feval y = x) (NTT_inverse_gallina p) p' /\
-                Forall2 (fun x y => feval y = x) zetas z' /\
-                mem' =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p') * R
-                        * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z')
-                        * R }.
+    (* Instance spec_of_ntt_inverse: spec_of ntt_inverse := *)
+    (*   fnspec! ntt_inverse (z_ptr p_ptr: word) / (p: list F) (z': list felem) R, *)
+    (*     { requires tr mem := *)
+    (*         exists p', *)
+    (*           Forall2 (fun x y => feval y = x) p p' /\ *)
+    (*           Forall2 (fun x y => feval y = x) zetas z' /\ *)
+    (*           mem =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p') *)
+    (*                  * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z') *)
+    (*                  * R; *)
+    (*       ensures tr' mem' := *)
+    (*         tr' = tr /\ *)
+    (*           exists p', *)
+    (*             Forall2 (fun x y => feval y = x) (NTT_inverse_gallina p) p' /\ *)
+    (*             Forall2 (fun x y => feval y = x) zetas z' /\ *)
+    (*             mem' =* (Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p') * R *)
+    (*                     * (Bignums felem_size_in_words (Nat.pow 2 m) z_ptr z') *)
+    (*                     * R }. *)
 
     Definition br2_ntt :=
       func! (z_ptr, p) {
@@ -169,38 +151,38 @@ Section Bedrock.
             }
         }.
 
-    Definition br2_ntt_inverse :=
-      func! (z_ptr, p) {
-          stackalloc felem_size_in_bytes as tmp;
-          l = coq:(Z.of_nat (Nat.pow 2 (Nat.min m n)));
-          len = coq:(Z.of_nat (Nat.pow 2 (n - (Nat.min m n))));
-          while (len < coq:(Z.of_nat (Nat.pow 2 n))) {
-              start = coq:(0);
-              old_len = len;
-              len = len << coq:(1);
-              while (start < coq:(Z.of_nat (Nat.pow 2 n))) {
-                  l = l - coq:(1);
-                  z = coq:(offset (expr.var "z_ptr") bedrock_expr:(l) (expr.literal felem_size_in_bytes));
-                  j = start;
-                  while (j < start + old_len) {
-                      $felem_copy(tmp, coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes)));
-                      x = coq:(offset (expr.var "p") bedrock_expr:(j + old_len) (expr.literal felem_size_in_bytes));
-                      y = coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes));
-                      $add(y, tmp, x);
-                      $sub(x, x, tmp);
-                      $mul(x, z, x);
-                      j = j + coq:(1)
-                    };
-                  start = start + len
-                }
-            };
-          j = coq:(0);
-          while (j < coq:(Z.of_nat (Nat.pow 2 n))) {
-              x = coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes));
-              $mul_inv_pow2(x, x);
-              j = j + coq:(1)
-            }
-        }.
+    (* Definition br2_ntt_inverse := *)
+    (*   func! (z_ptr, p) { *)
+    (*       stackalloc felem_size_in_bytes as tmp; *)
+    (*       l = coq:(Z.of_nat (Nat.pow 2 (Nat.min m n))); *)
+    (*       len = coq:(Z.of_nat (Nat.pow 2 (n - (Nat.min m n)))); *)
+    (*       while (len < coq:(Z.of_nat (Nat.pow 2 n))) { *)
+    (*           start = coq:(0); *)
+    (*           old_len = len; *)
+    (*           len = len << coq:(1); *)
+    (*           while (start < coq:(Z.of_nat (Nat.pow 2 n))) { *)
+    (*               l = l - coq:(1); *)
+    (*               z = coq:(offset (expr.var "z_ptr") bedrock_expr:(l) (expr.literal felem_size_in_bytes)); *)
+    (*               j = start; *)
+    (*               while (j < start + old_len) { *)
+    (*                   $felem_copy(tmp, coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes))); *)
+    (*                   x = coq:(offset (expr.var "p") bedrock_expr:(j + old_len) (expr.literal felem_size_in_bytes)); *)
+    (*                   y = coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes)); *)
+    (*                   $add(y, tmp, x); *)
+    (*                   $sub(x, x, tmp); *)
+    (*                   $mul(x, z, x); *)
+    (*                   j = j + coq:(1) *)
+    (*                 }; *)
+    (*               start = start + len *)
+    (*             } *)
+    (*         }; *)
+    (*       j = coq:(0); *)
+    (*       while (j < coq:(Z.of_nat (Nat.pow 2 n))) { *)
+    (*           x = coq:(offset (expr.var "p") bedrock_expr:(j) (expr.literal felem_size_in_bytes)); *)
+    (*           $mul_inv_pow2(x, x); *)
+    (*           j = j + coq:(1) *)
+    (*         } *)
+    (*     }. *)
 
     Lemma Forall2_set_nth {A B: Type}:
       forall (R: A -> B -> Prop) (x: A) (y: B) (i: nat) (xs: list A) (ys: list B),
@@ -249,7 +231,7 @@ Section Bedrock.
       Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub un_outbounds bin_outbounds].
       pose proof felem_size_in_bytes_mod as XA.
       assert (0 < felem_size_in_bytes) as XB.
-      { assert (felem_size_in_bytes = Z.of_nat n_words * bytes_per_word width) as -> by reflexivity.
+      { cbv [felem_size_in_bytes].
         pose proof (Types.word_size_in_bytes_pos). Lia.lia. }
       assert (n < Z.to_nat width)%nat as n_lt_width'.
       { apply ((Nat.pow_lt_mono_r_iff 2 n (Z.to_nat width) ltac:(Lia.lia))).
@@ -274,7 +256,7 @@ Section Bedrock.
                                   map.get loc "tmp" = Some a /\
                                   map.get loc "l" = Some (word.of_Z (Z.of_nat ((Nat.pow 2 i) - 1))) /\
                                   map.get loc "len" = Some (word.of_Z (Z.of_nat (Nat.pow 2 (n - i)))) /\
-                                  exists a_stk, ((FElem a a_stk) * ((Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p') * (Bignums felem_size_in_words (2 ^ m) z_ptr z' * R)))%sep mem').
+                                  exists a_stk, ((FElem a a_stk) * ((Bignums felem_size_in_words (Nat.pow 2 n) p_ptr p') * (Bignums felem_size_in_words (2 ^ (Nat.min m n)) z_ptr z' * R)))%sep mem').
       exists nat, lt, loop_inv1.
       split; [apply lt_wf|].
       split. (* Invariant holds at beginning *)
@@ -333,7 +315,7 @@ Section Bedrock.
                                     map.get loc "len" = Some (word.of_Z (Z.of_nat (Nat.pow 2 (n - (Nat.min m n - (fuel - 1)))))) /\
                                     map.get loc "old_len" = Some (word.of_Z (Z.of_nat (Nat.pow 2 (n - (Nat.min m n - fuel))))) /\
                                     map.get loc "start" = Some (word.of_Z (Z.of_nat (i * (Nat.pow 2 (n - (Nat.min m n - fuel)))))) /\
-                                    (exists a_stk : list word.rep, ((FElem a a_stk) * (Bignums felem_size_in_words (2 ^ n) p_ptr p'' ⋆ (Bignums felem_size_in_words (2 ^ m) z_ptr z' ⋆ R)))%sep mem')).
+                                    (exists a_stk : list word.rep, ((FElem a a_stk) * (Bignums felem_size_in_words (2 ^ n) p_ptr p'' ⋆ (Bignums felem_size_in_words (2 ^ (Nat.min m n)) z_ptr z' ⋆ R)))%sep mem')).
         exists nat, lt, loop_inv2. split; [apply lt_wf|]. split.
         { (* invariant holds at beginning *)
           exists (2 ^ (Nat.min m n - fuel))%nat. repeat split; [Lia.lia|].
@@ -409,7 +391,7 @@ Section Bedrock.
                                      map.get loc "start" = Some (word.of_Z (Z.of_nat ((2 ^ (Nat.min m n - fuel) - fuel2) * 2 ^ (n - (Nat.min m n - fuel))))) /\
                                      map.get loc "j" = Some (word.of_Z (Z.of_nat ((2 ^ (Nat.min m n - fuel) - fuel2) * 2 ^ (n - (Nat.min m n - fuel)) + i))) /\
                                      map.get loc "z" = Some (word.add z_ptr (word.of_Z (felem_size_in_bytes * (Z.of_nat (2 ^ (Nat.min m n - fuel) - 1 + (2 ^ (Nat.min m n - fuel) - fuel2)) + 1)))) /\
-                                     (exists a_stk : list word.rep, ((FElem a a_stk) * (Bignums felem_size_in_words (2 ^ n) p_ptr p'' ⋆ (Bignums felem_size_in_words (2 ^ m) z_ptr z' ⋆ R)))%sep mem')).
+                                     (exists a_stk : list word.rep, ((FElem a a_stk) * (Bignums felem_size_in_words (2 ^ n) p_ptr p'' ⋆ (Bignums felem_size_in_words (2 ^ (Nat.min m n)) z_ptr z' ⋆ R)))%sep mem')).
           exists nat, lt, loop_inv3. split; [apply lt_wf|].
           split.
           { (* Invariant holds at beginning *)
@@ -487,7 +469,7 @@ Section Bedrock.
               rewrite map.get_put_same.
               eexists; split; [reflexivity|repeat straightline]. }
             assert (Z.of_nat _ + 1 = Z.of_nat (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2)))%Z as -> by (clear -Hfuel Hfuel2 Hfnz Hfnz2; Lia.lia).
-            assert ((2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2)) < Nat.pow 2 m)%nat as z_ok.
+            assert ((2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2)) < Nat.pow 2 (Nat.min m n))%nat as z_ok.
             { assert (_ + _ = 2 * (Nat.pow 2 (Nat.min m n - fuel)) - fuel2)%nat as -> by (clear -Hfuel Hfuel2 Hfnz Hfnz2; Lia.lia).
               rewrite <- Nat.pow_succ_r'.
               assert (S (_ - _) = Nat.min m n - (fuel - 1))%nat as -> by (clear -Hfuel Hfuel2 Hfnz Hfnz2; Lia.nia).
@@ -500,7 +482,7 @@ Section Bedrock.
             assert (length p3  = Nat.pow 2 n)%nat as Xlen.
             { destruct Hseps4 as (mStack4 & mHeap4 & Hsplit4 & Hstk4 & Hseps4).
               eapply Bignums_length; eauto. }
-            assert (length z' = Nat.pow 2 m)%nat as Ylen.
+            assert (length z' = Nat.pow 2 (Nat.min m n))%nat as Ylen.
             { destruct Hseps4 as (mStack4 & mHeap4 & Hsplit4 & Hstk4 & Hseps4).
               destruct Hseps4 as (? & ? & ? & ? & Hseps4).
               eapply Bignums_length; eauto. }
@@ -512,7 +494,10 @@ Section Bedrock.
             assert (Z.of_nat (length z' * felem_size_in_words) * bytes_per_word width < 2 ^ width) as ZB.
             { unfold felem. rewrite Ylen.
               rewrite Nat2Z.inj_mul, <- Z.mul_assoc.
-              exact m_lt_width. }
+              eapply Z.le_lt_trans; [|apply n_lt_width].
+              apply Zmult_le_compat_r; [|clear -XB; Lia.lia].
+              do 2 rewrite Nat2Z.inj_pow.
+              apply Z.pow_le_mono_r; Lia.lia. }
             pose proof Hseps4 as HsepsP.
             seprewrite_in (Bignums_nth_default nil felem_size_in_words (Nat.pow 2 n) p_ptr p3 (j + len4)%nat ltac:(rewrite Xlen; exact idx_ok) idx_ok ZA) HsepsP.
             fold FElem in HsepsP.
@@ -520,7 +505,7 @@ Section Bedrock.
             { rewrite Z.mul_comm. cbv [felem_size_in_bytes].
               rewrite Z.mul_assoc, <- Nat2Z.inj_mul. eexists; seplog. }
             pose proof Hseps4 as HsepsZ.
-            seprewrite_in (Bignums_nth_default nil felem_size_in_words (Nat.pow 2 m) z_ptr z' (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2)) ltac:(rewrite Ylen; clear -z_ok; Lia.lia) ltac:(clear -z_ok; Lia.lia) ZB) HsepsZ.
+            seprewrite_in (Bignums_nth_default nil felem_size_in_words (Nat.pow 2 (Nat.min m n)) z_ptr z' (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2)) ltac:(rewrite Ylen; clear -z_ok; Lia.lia) ltac:(clear -z_ok; Lia.lia) ZB) HsepsZ.
             fold FElem in HsepsZ.
             assert (exists RX, (FElem (word.add z_ptr (word.of_Z (felem_size_in_bytes * Z.of_nat (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2))))) (nth_default nil z' (2 ^ (Nat.min m n - fuel) + (2 ^ (Nat.min m n - fuel) - fuel2))) ⋆ RX)%sep m3) as HsepsZ'.
             { rewrite Z.mul_comm. cbv [felem_size_in_bytes].
@@ -558,7 +543,7 @@ Section Bedrock.
             seprewrite_in (Bignums_nth_default nil felem_size_in_words (Nat.pow 2 n) p_ptr p3 (j + len4)%nat ltac:(rewrite Xlen; exact idx_ok) idx_ok ZA) Hx.
             fold FElem in Hx.
             assert (exists Rr, (FElem a x0 * Rr)%sep a1) as Hr by (eexists; seplog).
-            assert ((FElem (word.add p_ptr (word.of_Z (Z.of_nat ((j + len4) * felem_size_in_words) * bytes_per_word width))) (nth_default nil p3 (j + len4)) * ((Bignums felem_size_in_words (Nat.min (j + len4) (2 ^ n)) p_ptr (List.firstn (j + len4) p3)) * (Bignums felem_size_in_words (2 ^ n - (j + len4 + 1)) (word.add p_ptr (word.of_Z (Z.of_nat ((j + len4 + 1) * felem_size_in_words) * bytes_per_word width))) (List.skipn (j + len4 + 1) p3)) * (FElem a x0 ⋆ (Bignums felem_size_in_words (2 ^ m) z_ptr z' ⋆ R))))%sep a1) as XX by seplog.
+            assert ((FElem (word.add p_ptr (word.of_Z (Z.of_nat ((j + len4) * felem_size_in_words) * bytes_per_word width))) (nth_default nil p3 (j + len4)) * ((Bignums felem_size_in_words (Nat.min (j + len4) (2 ^ n)) p_ptr (List.firstn (j + len4) p3)) * (Bignums felem_size_in_words (2 ^ n - (j + len4 + 1)) (word.add p_ptr (word.of_Z (Z.of_nat ((j + len4 + 1) * felem_size_in_words) * bytes_per_word width))) (List.skipn (j + len4 + 1) p3)) * (FElem a x0 ⋆ (Bignums felem_size_in_words (2 ^ (Nat.min m n)) z_ptr z' ⋆ R))))%sep a1) as XX by seplog.
             seprewrite_in (Bignums_nth_default nil felem_size_in_words (Nat.pow 2 n) p_ptr p3 (j)%nat ltac:(rewrite Xlen; clear -idx_ok; Lia.lia) ltac:(clear -idx_ok; Lia.lia) ZA) H13.
             fold FElem in H13.
             assert (exists Ry, (FElem (word.add p_ptr (word.of_Z (Z.of_nat ((j) * felem_size_in_words) * bytes_per_word width))) (nth_default nil p3 (j)) * Ry)%sep a1) as Hy' by (eexists; seplog).
@@ -580,7 +565,7 @@ Section Bedrock.
               repeat (rewrite map.get_put_diff by (clear; congruence)).
               eexists; split; [eassumption|repeat straightline]. }
             fold j len4.
-            assert (((Bignums felem_size_in_words (Nat.pow 2 n) p_ptr (set_nth (j + len4)%nat x3 p3)) * (FElem a x0 ⋆ (Bignums felem_size_in_words (2 ^ m) z_ptr z' ⋆ R)))%sep a3) as Hseps5.
+            assert (((Bignums felem_size_in_words (Nat.pow 2 n) p_ptr (set_nth (j + len4)%nat x3 p3)) * (FElem a x0 ⋆ (Bignums felem_size_in_words (2 ^ (Nat.min m n)) z_ptr z' ⋆ R)))%sep a3) as Hseps5.
             { seplog.
               rewrite (Bignums_set_nth felem_size_in_words (Nat.pow 2 n) p_ptr p3 (j + len4)%nat x3 ltac:(rewrite Xlen; exact idx_ok) idx_ok ZA).
               cbv [seps].
@@ -593,13 +578,10 @@ Section Bedrock.
             { repeat split.
               4: instantiate (1 := x0); eexists; seplog.
               3:{ instantiate (1 := (nth_default nil (set_nth (j + len4) x3 p3) j)).
-                  eexists; seplog.
-                  cancel_seps_at_indices 1%nat 0%nat; [reflexivity|].
-                  cancel. }
+                  eexists; seplog. }
               2: assumption.
               2:{ instantiate (2 := (nth_default nil (set_nth (j + len4) x3 p3) j)).
-                  seplog. cancel_seps_at_indices 1%nat 0%nat; [reflexivity|].
-                  cancel. }
+                  seplog. }
               rewrite set_nth_nth_default by (rewrite Xlen; clear -idx_ok; Lia.lia).
               assert (0 < len4)%nat as WW by (clear; pose proof (NatUtil.pow_nonzero 2 (n - (Nat.min m n - (fuel - 1))) ltac:(congruence)); Lia.lia).
               destruct (Nat.eq_dec _ _) as [He|_]; [clear -He WW; Lia.lia|].
