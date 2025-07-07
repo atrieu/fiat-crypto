@@ -41,6 +41,52 @@ Section Zetas.
   Qed.
 End Zetas.
 
+Section Fast_Decompose.
+  (* Use N instead of Nat for faster computation *)
+  Context {m: nat}.
+  Fixpoint fast_decompose i (l: N): list N :=
+    match i with
+    | O => [l]
+    | S i => (fast_decompose i (N.div l 2%N)) ++ (fast_decompose i (N.pow 2 (N.of_nat m) + N.div l 2)%N)
+    end.
+
+  Lemma fast_decompose_spec:
+    forall i l, fast_decompose i l = List.map N.of_nat (@NTT.decompose m i (N.to_nat l)).
+  Proof.
+    induction i; intros l; cbn.
+    - rewrite Nnat.N2Nat.id. reflexivity.
+    - unfold NTT.decompose_body'. rewrite List.map_app.
+      do 2 rewrite IHi. f_equal.
+      + f_equal. f_equal.
+        rewrite Nnat.N2Nat.inj_div.
+        f_equal; reflexivity.
+      + f_equal. f_equal.
+        rewrite Nnat.N2Nat.inj_add, Nnat.N2Nat.inj_div, Nnat.N2Nat.inj_pow.
+        rewrite Nnat.Nat2N.id.
+        reflexivity.
+  Qed.
+
+  Fixpoint fast_zeta_powers (i: nat) (l: N): list N :=
+    match i with
+    | O => [l]
+    | S i => (fast_zeta_powers i l) ++ List.map (fun k => nth_default 0%N (fast_decompose (S i) l) (2 * k)) (seq 0 (Nat.pow 2 i))
+    end.
+
+  Lemma fast_zeta_powers_spec:
+    forall i l,
+      fast_zeta_powers i l = List.map N.of_nat (@GallinaNTT.zeta_powers m (N.to_nat l) i).
+  Proof.
+    induction i; intros l.
+    - cbn. rewrite Nnat.N2Nat.id. reflexivity.
+    - cbn -[fast_decompose NTT.decompose].
+      rewrite List.map_app, IHi. f_equal.
+      rewrite fast_decompose_spec, List.map_map.
+      apply List.map_ext.
+      intros. assert (0%N = N.of_nat 0%nat) as -> by reflexivity.
+      rewrite ListUtil.map_nth_default_always. reflexivity.
+  Qed.
+End Fast_Decompose.
+
 Section FNDSA512.
   Local Notation q := 12289%positive.
   Local Notation F := (F q).
@@ -68,7 +114,7 @@ Section FNDSA512.
     native_cast_no_check (refl_equal true).
   Qed.
 
-  (* (* ζ^0 to ζ^1024 *) *)
+  (* ζ^0 to ζ^1024 *)
   Definition fndsa_zetas_1024 :=
     [1; 7; 49; 343; 2401; 4518; 7048; 180; 1260; 8820; 295; 2065; 2166; 2873; 7822;
      5598; 2319; 3944; 3030; 8921; 1002; 7014; 12231; 11883; 9447; 4684; 8210;
@@ -231,18 +277,21 @@ Section FNDSA512.
     cbn. reflexivity.
   Qed.
 
-  Definition fndsa1024_zetas := List.map (fun k => nth_default 0%F (List.map (F.of_Z q) fndsa_zetas_1024) k) (@GallinaNTT.zeta_powers m (Nat.pow 2 m) m).
+  Definition fndsa1024_zetas := List.map (fun k => nth_default 0%F (List.map (F.of_Z q) fndsa_zetas_1024) (N.to_nat k)) (@fast_zeta_powers m m (N.pow 2 (N.of_nat m))).
 
   Lemma fndsa1024_zetas_correct:
     fndsa1024_zetas = List.map (fun k => F.pow zeta (N.of_nat k)) (@GallinaNTT.zeta_powers m (Nat.pow 2 m) m).
   Proof.
     unfold fndsa1024_zetas.
+    rewrite fast_zeta_powers_spec, List.map_map.
+    rewrite Nnat.N2Nat.inj_pow, Nnat.Nat2N.id.
     apply nth_error_ext. intros.
     do 2 rewrite nth_error_map.
     destruct (nth_error (GallinaNTT.zeta_powers _ _) i) as [k|] eqn:Hk; [|reflexivity].
     cbn [option_map].
     f_equal. unfold F.zero.
     rewrite ListUtil.map_nth_default_always.
+    rewrite Nnat.Nat2N.id.
     rewrite (fndsa_zetas_1024_spec k (nth_default 0 fndsa_zetas_1024 k)); [reflexivity|].
     apply ListUtil.nth_error_Some_nth_default.
     cbn. assert (k <= Nat.pow 2 m)%nat as Hkm; [|cbn in Hkm; Lia.lia].
